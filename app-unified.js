@@ -8,8 +8,10 @@ const nodemailer = require('nodemailer');
 const fetch = require('node-fetch');
 const db = require('./database');
 const multer = require('multer');
+const { S3Client, PutObjectCommand, DeleteObjectCommand } = require("@aws-sdk/client-s3");
+const chokidar = require('chokidar');
 
-const SERVER_VERSION = "5.0.0 (Clean Refresh)";
+const SERVER_VERSION = "5.1.0 (Recovery Update)";
 const PORT = process.env.PORT || 3000;
 const otpStore = new Map();
 
@@ -28,7 +30,7 @@ const MUSICA_JSON_PATH = path.join(__dirname, 'musica.json');
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 });
 
-// Configuración de Multer para Audios (Admin)
+// Configuración de Multer
 const audioStorage = multer.diskStorage({
     destination: (req, file, cb) => {
         const type = req.params.type === 'ambient' ? 'ambient' : 'intros';
@@ -37,6 +39,20 @@ const audioStorage = multer.diskStorage({
     filename: (req, file, cb) => cb(null, file.originalname)
 });
 const uploadAudio = multer({ storage: audioStorage });
+
+function getMusicDir() {
+    const config = getConfig();
+    let mPath = config.musicPath || 'musica';
+    if (!path.isAbsolute(mPath)) mPath = path.join(__dirname, mPath);
+    if (!fs.existsSync(mPath)) fs.mkdirSync(mPath, { recursive: true });
+    return mPath;
+}
+
+const musicStorage = multer.diskStorage({
+    destination: (req, file, cb) => cb(null, getMusicDir()),
+    filename: (req, file, cb) => cb(null, file.originalname)
+});
+const musicUpload = multer({ storage: musicStorage });
 
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
@@ -134,11 +150,9 @@ app.post('/api/auth/verify-otp', (req, res) => {
 
         db.get("SELECT * FROM users WHERE LOWER(email) = ?", [cleanEmail], (err, user) => {
             if (user) {
-                // USUARIO EXISTE: Actualizar dispositivo y entrar
                 db.run("UPDATE users SET device_id = ?, last_seen = CURRENT_TIMESTAMP WHERE id = ?", [deviceId, user.id]);
                 res.json({ success: true, user: { name: user.name, email: user.email, phone: user.phone, referralCode: user.referral_code } });
             } else {
-                // USUARIO NUEVO (Vía OTP): Validar referido si existe
                 handleNewUserRegistration(null, cleanEmail, '', deviceId, referralCode, res);
             }
         });
@@ -147,7 +161,6 @@ app.post('/api/auth/verify-otp', (req, res) => {
     }
 });
 
-// --- AUTH: DIRECT REGISTER ---
 app.post('/api/register', (req, res) => {
     const { name, email, phone, deviceId, referralCode } = req.body;
     const cleanEmail = email?.toLowerCase().trim();
@@ -158,7 +171,6 @@ app.post('/api/register', (req, res) => {
     });
 });
 
-// Función compartida para registrar nuevos usuarios
 function handleNewUserRegistration(name, email, phone, deviceId, referralCode, res) {
     const finalName = name || 'Usuario';
     const myCode = (finalName || 'USR').toUpperCase().replace(/[^A-Z0-9]/g, '').substring(0, 5) + "-" + Math.floor(1000 + Math.random() * 9000);
@@ -185,7 +197,7 @@ function handleNewUserRegistration(name, email, phone, deviceId, referralCode, r
 
 // --- CORE FUNCTIONALITY ---
 app.post('/api/ping', (req, res) => {
-    const { deviceId, email, name } = req.body;
+    const { deviceId, email } = req.body;
     if (!email || !deviceId) return res.json({ status: "logout" });
     const cleanEmail = email.toLowerCase().trim();
     db.get("SELECT * FROM users WHERE LOWER(email) = ? AND device_id = ?", [cleanEmail, deviceId], (err, row) => {
@@ -193,7 +205,12 @@ app.post('/api/ping', (req, res) => {
         db.run("UPDATE users SET last_seen = CURRENT_TIMESTAMP WHERE id = ?", [row.id]);
         db.get("SELECT * FROM licenses WHERE LOWER(user_email) = ? AND original_device_id = ? AND status='USED' AND (expires_at IS NULL OR expires_at > CURRENT_TIMESTAMP) ORDER BY expires_at DESC LIMIT 1",
             [cleanEmail, deviceId], (err, lic) => {
-                res.json({ status: lic ? "active" : "inactive", type: lic?.type, expiresAt: lic?.expires_at });
+                res.json({
+                    status: lic ? "active" : "inactive",
+                    type: lic?.type,
+                    expiresAt: lic?.expires_at,
+                    pendingGifts: row.pending_gifts || 0
+                });
             });
     });
 });
@@ -217,19 +234,41 @@ app.post('/api/activate', (req, res) => {
     });
 });
 
-// --- ADMIN API ---
-app.get('/api/admin/config', (req, res) => res.json(getConfig()));
-app.post('/api/admin/config', (req, res) => {
-    if (saveConfig({ ...getConfig(), ...req.body })) {
-        io.emit('config_updated');
-        res.json({ success: true });
-    } else res.status(500).json({ error: "Fail" });
+// --- ADMIN API: LICENSES ---
+app.post('/api/admin/generate', (req, res) => {
+    const { type, count } = req.body;
+    const qty = count || 1;
+    const keys = [];
+    const stmt = db.prepare("INSERT INTO licenses (key, type, status) VALUES (?, ?, 'UNUSED')");
+    for (let i = 0; i < qty; i++) {
+        const key = `TB-${type === 'PERMANENT' ? 'PERM' : type === '30_DAYS' ? 'MES' : 'DIA'}-${Math.random().toString(36).substr(2, 6).toUpperCase()}-${Math.random().toString(36).substr(2, 6).toUpperCase()}`;
+        keys.push(key);
+        stmt.run(key, type);
+    }
+    stmt.finalize();
+    io.emit('update_licenses');
+    res.json({ message: `${qty} keys generated`, keys });
 });
 
+app.get('/api/admin/active-licenses', (req, res) => {
+    db.all(`SELECT l.*, u.name as user_name FROM licenses l LEFT JOIN users u ON l.user_email = u.email AND l.original_device_id = u.device_id ORDER BY l.created_at DESC`, (err, rows) => {
+        res.json(rows || []);
+    });
+});
+
+app.delete('/api/admin/licenses/:key', (req, res) => {
+    db.run("DELETE FROM licenses WHERE key = ?", [req.params.key], () => {
+        io.emit('update_licenses');
+        res.json({ success: true });
+    });
+});
+
+// --- ADMIN API: USERS ---
 app.get('/api/admin/users', (req, res) => {
     db.all("SELECT * FROM users ORDER BY last_seen DESC", (err, rows) => res.json(rows || []));
 });
 
+// --- ADMIN API: MUSIC & AUDIOS ---
 app.get('/api/admin/audios/:type', (req, res) => {
     const dir = path.join(UPLOADS_DIR, req.params.type);
     if (!fs.existsSync(dir)) return res.json([]);
@@ -241,15 +280,85 @@ app.get('/api/admin/music-library', (req, res) => {
     else res.json([]);
 });
 
+// --- PLAYLISTS ---
+app.get('/api/playlists', (req, res) => {
+    const { email } = req.query;
+    db.all("SELECT * FROM playlists WHERE user_email = ? ORDER BY updated_at DESC", [email], (err, rows) => {
+        res.json((rows || []).map(r => ({ ...r, songs: JSON.parse(r.songs || '[]') })));
+    });
+});
+app.post('/api/playlists', (req, res) => {
+    const { email, name } = req.body;
+    db.run("INSERT INTO playlists (user_email, name, songs) VALUES (?, ?, '[]')", [email, name], function () {
+        res.json({ id: this.lastID, name, songs: [] });
+    });
+});
+app.patch('/api/playlists/:id', (req, res) => {
+    const { name, songs } = req.body;
+    db.run("UPDATE playlists SET name = COALESCE(?, name), songs = COALESCE(?, songs), updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+        [name, songs ? JSON.stringify(songs) : null, req.params.id], () => res.json({ success: true }));
+});
+
+// ==========================================
+// INTEGRACIÓN VIGILANTE (B2 Sync)
+// ==========================================
+let watcher = null;
+const B2_KEY_ID = '004c11eb0fc379b0000000001';
+const B2_APP_KEY = 'K004VoxaMYYqfp/vO+i/CU19ItjipRk';
+const B2_ENDPOINT = 'https://s3.us-west-004.backblazeb2.com';
+const BUCKET_NAME = 'tecnobanda';
+const B2_DOMAIN = 'f004.backblazeb2.com';
+
+const s3 = new S3Client({
+    endpoint: B2_ENDPOINT,
+    region: "us-west-004",
+    credentials: { accessKeyId: B2_KEY_ID, secretAccessKey: B2_APP_KEY }
+});
+
+async function uploadToB2(filePath, fileName) {
+    try {
+        const fileContent = fs.readFileSync(filePath);
+        await s3.send(new PutObjectCommand({ Bucket: BUCKET_NAME, Key: fileName, Body: fileContent, ACL: 'public-read' }));
+    } catch (err) { console.error(`[Vigilante] Error subiendo ${fileName}:`, err); }
+}
+
+async function updateManifest() {
+    try {
+        const mDir = getMusicDir();
+        if (!fs.existsSync(mDir)) return;
+        const files = fs.readdirSync(mDir).filter(f => f.toLowerCase().endsWith('.zip') || f.toLowerCase().endsWith('.rar'));
+        let database = files.map(f => {
+            const stats = fs.statSync(path.join(mDir, f));
+            let artist = "Desconocido", title = f.replace(/\.(zip|rar)$/i, '');
+            if (f.includes(' - ')) { const parts = title.split(' - '); artist = parts[0]; title = parts[1]; }
+            return { title, artist, isCompressed: true, archiveFile: `https://${B2_DOMAIN}/file/${BUCKET_NAME}/${encodeURIComponent(f).replace(/%20/g, '+')}`, dateAdded: stats.mtime.toISOString() };
+        });
+        database.sort((a, b) => new Date(b.dateAdded) - new Date(a.dateAdded));
+        fs.writeFileSync(MUSICA_JSON_PATH, JSON.stringify(database, null, 2));
+        await uploadToB2(MUSICA_JSON_PATH, 'musica.json');
+        io.emit('database_updated', database);
+    } catch (e) { console.error('[Vigilante] Error manifest:', e); }
+}
+
+function startVigilante() {
+    const mDir = getMusicDir();
+    if (watcher) watcher.close();
+    watcher = chokidar.watch(mDir, { ignoreInitial: true, persistent: true, awaitWriteFinish: true });
+    watcher.on('add', () => updateManifest()).on('unlink', () => updateManifest());
+    updateManifest();
+}
+
 app.get('*', (req, res, next) => {
     if (req.url.startsWith('/api') || req.url.startsWith('/uploads')) return next();
     res.sendFile(path.join(__dirname, 'index.html'));
 });
 
-// --- SOCKETS ---
 io.on('connection', (socket) => {
     socket.on('join_admin', () => socket.join('admin_room'));
     socket.on('join_user', (email) => socket.join(email.toLowerCase().trim()));
 });
 
-server.listen(PORT, '0.0.0.0', () => { console.log(`✅ DISCO-SERVER LIVE ON PORT ${PORT}`); });
+server.listen(PORT, '0.0.0.0', () => {
+    console.log(`✅ DISCO-SERVER LIVE ON PORT ${PORT}`);
+    startVigilante();
+});
