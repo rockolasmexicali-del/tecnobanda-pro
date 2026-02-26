@@ -59,11 +59,17 @@ function saveConfig(config) {
 
 function getMailTransporter() {
     const config = getConfig();
-    const mail = config.emailServer;
-    if (mail && mail.user && mail.pass) {
+    const mail = config.emailServer || {};
+
+    // Prioridad a variables de entorno para evitar que se borren al actualizar en GitHub
+    const user = process.env.SMTP_USER || mail.user;
+    const pass = process.env.SMTP_PASS || mail.pass;
+    const service = process.env.SMTP_SERVICE || mail.service || 'gmail';
+
+    if (user && pass) {
         return nodemailer.createTransport({
-            service: mail.service || 'gmail',
-            auth: { user: mail.user, pass: mail.pass },
+            service: service,
+            auth: { user: user, pass: pass },
             tls: { rejectUnauthorized: false }
         });
     }
@@ -132,8 +138,8 @@ app.post('/api/auth/verify-otp', (req, res) => {
                     const myCode = (name || 'USR').toUpperCase().replace(/[^A-Z0-9]/g, '').substring(0, 5) + "-" + Math.floor(1000 + Math.random() * 9000);
 
                     if (referralCode && referralCode.trim() !== "") {
-                        const cleanRefCode = referralCode.trim().replace(/\s/g, '');
-                        db.get("SELECT id FROM users WHERE REPLACE(UPPER(referral_code), ' ', '') = REPLACE(UPPER(?), ' ', '') LIMIT 1", [cleanRefCode], (err, padrino) => {
+                        const cleanRefCode = referralCode.trim().replace(/[\s-]/g, '');
+                        db.get("SELECT id FROM users WHERE REPLACE(REPLACE(UPPER(referral_code), ' ', ''), '-', '') = UPPER(?) LIMIT 1", [cleanRefCode], (err, padrino) => {
                             if (err) return res.status(500).json({ error: err.message });
                             if (!padrino) {
                                 console.log(`[OTP-Reg] ❌ Código de referido inválido: ${cleanRefCode}`);
@@ -181,8 +187,8 @@ app.post('/api/register', (req, res) => {
 
         // VALIDACIÓN DE CÓDIGO DE REFERIDO
         if (referralCode && referralCode.trim() !== "") {
-            const cleanRefCode = referralCode.trim().replace(/\s/g, '');
-            db.get("SELECT id FROM users WHERE REPLACE(UPPER(referral_code), ' ', '') = REPLACE(UPPER(?), ' ', '') LIMIT 1", [cleanRefCode], (err, padrino) => {
+            const cleanRefCode = referralCode.trim().replace(/[\s-]/g, '');
+            db.get("SELECT id FROM users WHERE REPLACE(REPLACE(UPPER(referral_code), ' ', ''), '-', '') = UPPER(?) LIMIT 1", [cleanRefCode], (err, padrino) => {
                 if (err) return res.status(500).json({ error: err.message });
                 if (!padrino) {
                     console.log(`[Registro] ❌ Código de referido inválido: ${cleanRefCode}`);
