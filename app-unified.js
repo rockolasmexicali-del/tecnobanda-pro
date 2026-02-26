@@ -146,12 +146,22 @@ app.post('/api/auth/verify-otp', (req, res) => {
                     }
 
                     function proceedWithOtpReg(finalRefCode) {
-                        db.run("INSERT INTO users (name, email, phone, device_id, last_seen, referral_code, referred_by) VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, ?, ?)",
-                            [name, cleanEmail, phone, deviceId, myCode, finalRefCode], function (err) {
+                        if (existing) {
+                            // SI YA EXISTE EL CORREO, SOLO ACTUALIZAMOS EL DEVICE_ID (Migración de dispositivo)
+                            db.run("UPDATE users SET device_id = ?, last_seen = CURRENT_TIMESTAMP WHERE id = ?", [deviceId, existing.id], function (err) {
                                 if (err) return res.status(500).json({ error: err.message });
                                 io.emit('update_users');
-                                res.json({ success: true, user: { name, email: cleanEmail, phone, referralCode: myCode } });
+                                res.json({ success: true, user: { name: existing.name, email: existing.email, phone: existing.phone, referralCode: existing.referral_code } });
                             });
+                        } else {
+                            // SI ES TOTALMENTE NUEVO, INSERTAMOS
+                            db.run("INSERT INTO users (name, email, phone, device_id, last_seen, referral_code, referred_by) VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, ?, ?)",
+                                [name, cleanEmail, phone, deviceId, myCode, finalRefCode], function (err) {
+                                    if (err) return res.status(500).json({ error: err.message });
+                                    io.emit('update_users');
+                                    res.json({ success: true, user: { name, email: cleanEmail, phone, referralCode: myCode } });
+                                });
+                        }
                     }
                 });
             }
