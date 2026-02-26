@@ -302,6 +302,44 @@ app.patch('/api/playlists/:id', (req, res) => {
         [name, songs ? JSON.stringify(songs) : null, req.params.id], () => res.json({ success: true }));
 });
 
+// --- GIFTS & REFERRALS API ---
+app.get('/api/users/gifts', (req, res) => {
+    const { email } = req.query;
+    if (!email) return res.status(400).json({ error: "Email requerido" });
+    db.get("SELECT pending_gifts FROM users WHERE LOWER(email) = ?", [email.toLowerCase().trim()], (err, user) => {
+        res.json({ pendingGifts: user ? user.pending_gifts : 0 });
+    });
+});
+
+app.post('/api/users/gifts/claim', (req, res) => {
+    const { email } = req.body;
+    if (!email) return res.status(400).json({ error: "Email requerido" });
+    const cleanEmail = email.toLowerCase().trim();
+
+    db.get("SELECT pending_gifts FROM users WHERE LOWER(email) = ?", [cleanEmail], (err, user) => {
+        if (err) return res.status(500).json({ error: "Error al obtener datos del usuario" });
+        if (!user || user.pending_gifts <= 0) return res.status(400).json({ error: "No tienes regalos pendientes para reclamar" });
+
+        // Decrement pending_gifts and generate a new 1-day license
+        db.run("UPDATE users SET pending_gifts = pending_gifts - 1 WHERE LOWER(email) = ?", [cleanEmail], function (err) {
+            if (err) return res.status(500).json({ error: "Error al actualizar regalos pendientes" });
+
+            const key = `GIFT-1D-${Math.random().toString(36).substr(2, 6).toUpperCase()}`;
+            db.run("INSERT INTO licenses (key, type, status) VALUES (?, '1_DAY', 'UNUSED')", [key], function (err) {
+                if (err) {
+                    console.error("Error generating gift license:", err);
+                    // Optionally, revert pending_gifts if license generation fails
+                    db.run("UPDATE users SET pending_gifts = pending_gifts + 1 WHERE LOWER(email) = ?", [cleanEmail]);
+                    return res.status(500).json({ error: "Error al generar la licencia de regalo" });
+                }
+                io.emit('update_licenses');
+                io.to(cleanEmail).emit('new_gift', { message: "¡Has reclamado una licencia de regalo!", key: key });
+                res.json({ success: true, key: key });
+            });
+        });
+    });
+});
+
 // ==========================================
 // INTEGRACIÓN VIGILANTE (B2 Sync)
 // ==========================================
@@ -364,11 +402,13 @@ io.on('connection', (socket) => {
 // --- REFERRALS LOGIC ---
 async function handleReferralPoint(userEmail) {
     const cleanEmail = userEmail ? userEmail.trim().toLowerCase() : '';
+    // Buscamos quién invitó a este correo (solo una vez)
     db.get("SELECT id, referred_by FROM users WHERE LOWER(email) = ? AND referred_by IS NOT NULL AND referred_by != '' LIMIT 1", [cleanEmail], (err, user) => {
         if (user && user.referred_by) {
             const padrinoCode = user.referred_by.trim();
-            // Limpia vínculo para que solo dé 1 punto la primera vez
-            db.run("UPDATE users SET referred_by = NULL WHERE id = ?", [user.id], () => {
+            // Limpia vínculo para que solo dé 1 punto la primera vez (en todas las filas de este usuario child)
+            db.run("UPDATE users SET referred_by = NULL WHERE LOWER(email) = ?", [cleanEmail], () => {
+                // Buscamos al padrino (puede tener múltiples filas por dispositivo, tomamos una para ver puntos)
                 db.get("SELECT email, referral_points FROM users WHERE UPPER(referral_code) = UPPER(?) LIMIT 1", [padrinoCode], (err, padrino) => {
                     if (padrino) {
                         const padrinoEmail = padrino.email.trim().toLowerCase();
@@ -378,11 +418,13 @@ async function handleReferralPoint(userEmail) {
 
                         if (newPoints >= meta) {
                             generateGiftLicense(padrinoEmail);
+                            // Actualizamos TODOS los dispositivos del padrino
                             db.run("UPDATE users SET referral_points = 0, pending_gifts = pending_gifts + 1 WHERE LOWER(email) = ?", [padrinoEmail]);
                         } else {
                             db.run("UPDATE users SET referral_points = ? WHERE LOWER(email) = ?", [newPoints, padrinoEmail]);
                         }
                         io.emit('update_users');
+                        console.log(`[Referidos] Padrino ${padrinoEmail} recibió 1 punto. Total: ${newPoints}/${meta}`);
                     }
                 });
             });
@@ -393,7 +435,6 @@ async function handleReferralPoint(userEmail) {
 async function generateGiftLicense(email) {
     const key = `GIFT-1D-${Math.random().toString(36).substr(2, 6).toUpperCase()}`;
     db.run("INSERT INTO licenses (key, type, status) VALUES (?, '1_DAY', 'UNUSED')", [key], () => {
-        // Aquí podrías enviar email si quisieras, pero al menos la clave queda en la DB
         console.log(`[Referidos] Regalo generado para ${email}: ${key}`);
         io.to(email).emit('new_gift', { message: "¡Has ganado una licencia de regalo!" });
     });
