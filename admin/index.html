@@ -1,0 +1,793 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TecnoBanda - Panel de Administración</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
+
+    <!-- Flatpickr (Modern Date Picker) -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+    <link rel="stylesheet" type="text/css" href="https://npmcdn.com/flatpickr/dist/themes/dark.css">
+    <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+    <script src="https://npmcdn.com/flatpickr/dist/l10n/es.js"></script>
+
+    <link rel="stylesheet" href="style.css">
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Socket.IO - Intentar local y luego CDN -->
+    <script src="../socket.io/socket.io.js"></script>
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="https://cdn.socket.io/4.7.4/socket.io.min.js"></script>
+    <!-- Toastify -->
+    <link rel="stylesheet" type="text/css" href="https://cdn.jsdelivr.net/npm/toastify-js/src/toastify.min.css">
+    <script type="text/javascript" src="https://cdn.jsdelivr.net/npm/toastify-js"></script>
+</head>
+
+<body>
+    <div class="dashboard-container">
+        <!-- Sidebar -->
+        <aside class="sidebar glass-panel">
+            <div class="logo">
+                <i class="fa-solid fa-rocket"></i> TecnoBanda Admin
+            </div>
+            <nav id="sidebar-nav">
+                <div class="nav-group">
+                    <span class="nav-label">General</span>
+                    <a href="#" class="nav-item active" data-section="dashboard-section"
+                        data-title="Panel de Control"><i class="fa-solid fa-chart-line"></i> Dashboard</a>
+                    <a href="#" class="nav-item" data-section="income-section" data-title="Entradas y Gráficos"><i
+                            class="fa-solid fa-money-bill-trend-up"></i> Entradas y Gráficos</a>
+                </div>
+
+                <div class="nav-group">
+                    <span class="nav-label">Gestión</span>
+                    <a href="#" class="nav-item" data-section="users-module-section" data-title="Gestión de Usuarios"><i
+                            class="fa-solid fa-users"></i> Usuarios</a>
+                    <a href="#" class="nav-item" data-section="licenses-module-section"
+                        data-title="Licencias y Generador"><i class="fa-solid fa-key"></i> Licencias</a>
+                    <a href="#" class="nav-item" data-section="email-config-section"
+                        data-title="Configuración de Servidor de Correo"><i
+                            class="fa-solid fa-envelope-circle-check"></i> Servidor de Correo</a>
+                    <a href="#" class="nav-item" data-section="audio-management-section"
+                        data-title="Gestión de Audios (Intro y Ambiente)"><i class="fa-solid fa-music"></i> Gestión de
+                        Audios</a>
+                    <a href="#" class="nav-item" data-section="music-library-section"
+                        data-title="Librería Musical (Servidor)"><i class="fa-solid fa-folder-open"></i> Librería
+                        Musical</a>
+                    <a href="#" class="nav-item" data-section="audit-logs-section"
+                        data-title="Registro de Actividad (Auditoría)"><i class="fa-solid fa-list-check"></i>
+                        Actividad</a>
+                    <a href="#" class="nav-item" data-section="referral-config-section"
+                        data-title="Marketing y Referidos"><i class="fa-solid fa-gift"></i>
+                        Marketing</a>
+                </div>
+
+                <div class="nav-group">
+                    <span class="nav-label">Ajustes</span>
+                    <a href="#" class="nav-item" data-section="config-section" data-title="Configuración Global"><i
+                            class="fa-solid fa-gears"></i> Configuración</a>
+                </div>
+            </nav>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <header class="header glass-panel">
+                <h2 id="section-title">Panel de Control</h2>
+                <div class="user-profile">
+                    <span>Admin</span>
+                    <i class="fa-solid fa-circle-user"></i>
+                </div>
+            </header>
+
+            <!-- Dashboard Section -->
+            <div id="dashboard-section" class="content-section">
+                <!-- Stats Grid -->
+                <div class="stats-grid">
+                    <div class="stat-card glass-panel" onclick="switchSection('users-module-section')"
+                        style="cursor: pointer;">
+                        <div class="icon"><i class="fa-solid fa-user-plus"></i></div>
+                        <div class="info">
+                            <h3>Nuevos Usuarios</h3>
+                            <p id="weekly-users">0</p>
+                            <small style="color: #94a3b8; font-size: 0.7rem;">Esta semana</small>
+                        </div>
+                    </div>
+                    <div class="stat-card glass-panel" onclick="switchSection('licenses-module-section')"
+                        style="cursor: pointer;">
+                        <div class="icon" style="color: #2ecc71;"><i class="fa-solid fa-key"></i></div>
+                        <div class="info">
+                            <h3>Activaciones</h3>
+                            <p id="weekly-activations">0</p>
+                            <small style="color: #94a3b8; font-size: 0.7rem;">Esta semana</small>
+                        </div>
+                    </div>
+                    <div class="stat-card glass-panel" id="server-health-card">
+                        <div class="icon" style="color: #3498db;"><i class="fa-solid fa-heart-pulse"></i></div>
+                        <div class="info">
+                            <h3 id="health-label">Estado Servidor</h3>
+                            <p id="server-version" style="font-size: 0.8rem; margin: 0; opacity: 0.8;">V2.1.0</p>
+                            <p id="server-uptime" style="font-size: 0.7rem; margin: 0; opacity: 0.6;">Sincronizando...
+                            </p>
+                        </div>
+                    </div>
+                    <div class="stat-card glass-panel">
+                        <div class="icon" style="color: #f1c40f;"><i class="fa-solid fa-server"></i></div>
+                        <div class="info">
+                            <h3>Estado</h3>
+                            <p>Online</p>
+                        </div>
+                    </div>
+                    <div class="stat-card glass-panel" title="Ingresos totales de la semana actual">
+                        <div class="icon" style="color: #f1c40f;"><i class="fa-solid fa-sack-dollar"></i></div>
+                        <div class="info">
+                            <h3>Ventas Semana</h3>
+                            <p id="weekly-income">$0</p>
+                            <small style="color: #94a3b8; font-size: 0.7rem;">MXN acumulado</small>
+                        </div>
+                    </div>
+                    <div class="stat-card glass-panel" title="Promedio de ingresos por registro esta semana">
+                        <div class="icon" style="color: #9b59b6;"><i class="fa-solid fa-hand-holding-dollar"></i></div>
+                        <div class="info">
+                            <h3>ARPU Semana</h3>
+                            <p id="stat-arpu">$0</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Recent Users Table -->
+                <section class="users-section glass-panel">
+                    <div class="section-header">
+                        <h3><i class="fa-solid fa-clock-rotate-left"></i> Usuarios Recientes</h3>
+                        <button class="secondary-btn" onclick="switchSection('users-module-section')">Ver todos</button>
+                    </div>
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th class="sortable" data-column="id">ID</th>
+                                <th class="sortable" data-column="name">Nombre</th>
+                                <th class="sortable" data-column="email">Email</th>
+                                <th class="sortable" data-column="ip_address">IP / Origen</th>
+                                <th class="sortable" data-column="license_type">Licencia</th>
+                                <th class="sortable" data-column="last_seen">Última Conexión</th>
+                                <th class="sortable" data-column="referred_by">Referido</th>
+                                <th>Estado</th>
+                                <th>Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody id="users-table-body">
+                            <!-- Filled by JS -->
+                        </tbody>
+                    </table>
+                </section>
+            </div>
+
+            <!-- Income & Charts Section -->
+            <div id="income-section" class="content-section hidden">
+                <div class="price-config glass-panel">
+                    <h3><i class="fa-solid fa-tag"></i> Configuración de Precios</h3>
+                    <div class="generator-controls">
+                        <div class="form-group">
+                            <label>Precio Día (MXN)</label>
+                            <input type="number" id="price-day" value="10">
+                        </div>
+                        <div class="form-group">
+                            <label>Precio Mes (MXN)</label>
+                            <input type="number" id="price-month" value="250">
+                        </div>
+                        <div class="form-group">
+                            <label>Precio Permanente (MXN)</label>
+                            <input type="number" id="price-perm" value="1500">
+                        </div>
+                        <button class="cta-button" onclick="savePrices()">Actualizar Precios</button>
+                    </div>
+                </div>
+
+                <div class="charts-grid">
+                    <div class="chart-card glass-panel">
+                        <div class="section-header">
+                            <h3>Usuarios Registrados</h3>
+                            <div class="chart-type-controls">
+                                <button class="type-btn active" onclick="changeChartType('users', 'line')"
+                                    title="Línea"><i class="fa-solid fa-chart-line"></i></button>
+                                <button class="type-btn" onclick="changeChartType('users', 'bar')" title="Barras"><i
+                                        class="fa-solid fa-chart-bar"></i></button>
+                                <button class="type-btn" onclick="changeChartType('users', 'area')" title="Área"><i
+                                        class="fa-solid fa-chart-area"></i></button>
+                            </div>
+                        </div>
+                        <div class="chart-container">
+                            <canvas id="users-chart" data-period="monthly" data-type="line"></canvas>
+                        </div>
+                        <div class="chart-controls">
+                            <button class="filter-btn" onclick="loadUsersChart('daily')">Diario</button>
+                            <button class="filter-btn" onclick="loadUsersChart('weekly')">Semanal</button>
+                            <button class="filter-btn" onclick="loadUsersChart('monthly')">Mensual</button>
+                            <button class="filter-btn" onclick="loadUsersChart('annual')">Anual</button>
+                        </div>
+                    </div>
+                    <div class="chart-card glass-panel">
+                        <div class="section-header">
+                            <h3>Ventas e Ingresos</h3>
+                            <div class="chart-type-controls">
+                                <button class="type-btn active" onclick="changeChartType('income', 'line')"
+                                    title="Línea"><i class="fa-solid fa-chart-line"></i></button>
+                                <button class="type-btn" onclick="changeChartType('income', 'bar')" title="Barras"><i
+                                        class="fa-solid fa-chart-bar"></i></button>
+                                <button class="type-btn" onclick="changeChartType('income', 'area')" title="Área"><i
+                                        class="fa-solid fa-chart-area"></i></button>
+                            </div>
+                        </div>
+                        <div class="chart-container">
+                            <canvas id="income-chart" data-period="monthly" data-type="line"></canvas>
+                        </div>
+                        <div class="chart-controls">
+                            <button class="filter-btn" onclick="loadIncomeChart('daily')">Diario</button>
+                            <button class="filter-btn" onclick="loadIncomeChart('weekly')">Semanal</button>
+                            <button class="filter-btn" onclick="loadIncomeChart('monthly')">Mensual</button>
+                            <button class="filter-btn" onclick="loadIncomeChart('annual')">Anual</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="income-details glass-panel" style="margin-top: 20px;">
+                    <div class="section-header">
+                        <h3><i class="fa-solid fa-clock-rotate-left"></i> Transacciones Recientes</h3>
+                        <div style="display: flex; gap: 10px; align-items: center;">
+                            <button class="cta-button" onclick="openUniversalHistory()">
+                                <i class="fa-solid fa-book"></i> Historial Universal
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Universal History Modal -->
+                <div id="universal-history-modal" class="modal-overlay hidden">
+                    <div class="modal-content glass-panel" style="max-width: 1200px; width: 95%;">
+                        <div class="modal-header">
+                            <h2><i class="fa-solid fa-history"></i> Historial Universal de Ventas</h2>
+                            <button class="action-btn" onclick="closeUniversalHistory()"><i
+                                    class="fa-solid fa-xmark"></i></button>
+                        </div>
+
+                        <div class="history-filters"
+                            style="display: flex; gap: 1.5rem; margin-bottom: 2rem; align-items: flex-end; background: rgba(0,0,0,0.1); padding: 1.5rem; border-radius: 16px; border: 1px solid rgba(255,255,255,0.05); flex-wrap: wrap;">
+                            <div class="filter-group" style="min-width: 250px;">
+                                <label
+                                    style="display:block; font-size: 0.75rem; color: #94a3b8; margin-bottom: 8px; font-weight: 500;">Seleccionar
+                                    Rango de Fechas</label>
+                                <div style="position: relative;">
+                                    <i class="fa-solid fa-calendar-days"
+                                        style="position: absolute; left: 12px; top: 11px; color: var(--accent-color); pointer-events: none;"></i>
+                                    <input type="text" id="history-range" placeholder="Click para elegir fechas..."
+                                        style="width: 100%; padding: 10px 15px 10px 35px; border-radius: 8px; border: 1px solid rgba(59, 130, 246, 0.3); background: rgba(0,0,0,0.3); color: white; cursor: pointer; height: 40px;">
+                                </div>
+                            </div>
+
+                            <div class="filter-group" style="flex:1; min-width: 200px;">
+                                <label
+                                    style="display:block; font-size: 0.75rem; color: #94a3b8; margin-bottom: 8px; font-weight: 500;">Buscador
+                                    Rápido</label>
+                                <div style="position: relative;">
+                                    <i class="fa-solid fa-magnifying-glass"
+                                        style="position: absolute; left: 12px; top: 11px; color: #64748b; pointer-events: none;"></i>
+                                    <input type="text" id="universal-search"
+                                        placeholder="Buscar usuario, IP o licencia..." onkeyup="filterUniversalTable()"
+                                        style="width: 100%; padding: 10px 15px 10px 35px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.1); background: rgba(0,0,0,0.2); color: white; height: 40px;">
+                                </div>
+                            </div>
+
+                            <div class="filter-group" style="display:flex; gap: 12px;">
+                                <button class="cta-button" onclick="loadAllHistory()"
+                                    style="height: 45px; border-radius: 10px; padding: 0 20px; font-weight: 600; display: flex; align-items: center; gap: 8px;">
+                                    <i class="fa-solid fa-eye" style="font-size: 1.1rem;"></i> Ver Todo
+                                </button>
+                                <button class="secondary-btn" onclick="exportToExcel()"
+                                    style="height: 45px; border-radius: 10px; width: 55px; padding: 0; display: flex; align-items: center; justify-content: center; background: rgba(16, 185, 129, 0.1); border: 1px solid rgba(16, 185, 129, 0.2);"
+                                    title="Exportar a Excel">
+                                    <i class="fa-solid fa-file-excel" style="font-size: 1.6rem; color: #1D6F42;"></i>
+                                </button>
+                                <button class="secondary-btn" onclick="exportToPDF()"
+                                    style="height: 45px; border-radius: 10px; width: 55px; padding: 0; display: flex; align-items: center; justify-content: center; background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.2);"
+                                    title="Exportar a PDF">
+                                    <i class="fa-solid fa-file-pdf" style="font-size: 1.6rem; color: #E03131;"></i>
+                                </button>
+                            </div>
+                        </div>
+
+                        <div class="table-scroll-container" style="max-height: 60vh; overflow-y: auto;">
+                            <table class="data-table" id="universal-table">
+                                <thead>
+                                    <tr>
+                                        <th class="sortable" data-column="activated_at">Fecha / Hora</th>
+                                        <th class="sortable" data-column="user_name">Usuario</th>
+                                        <th>Dispositivo</th>
+                                        <th class="sortable" data-column="license_type">Tipo</th>
+                                        <th class="sortable" data-column="price_paid">Monto</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="universal-history-body">
+                                    <!-- Filled by JS -->
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <div class="modal-footer"
+                            style="margin-top: 1.5rem; text-align: right; color: #94a3b8; font-size: 0.8rem;">
+                            Total registros encontrados: <span id="universal-total-count">0</span> | Suma Total: <span
+                                id="universal-total-sum">$0</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Users Module Section -->
+            <div id="users-module-section" class="content-section hidden">
+                <section class="users-section glass-panel">
+                    <div class="section-header">
+                        <h3><i class="fa-solid fa-users"></i> Gestión Completa de Usuarios</h3>
+                        <div class="search-box">
+                            <input type="text" id="user-total-search" placeholder="Nombre, email o ID..."
+                                onkeyup="filterTotalUsersTable()">
+                        </div>
+                    </div>
+
+                    <!-- Messenger Bar -->
+                    <div class="messenger-bar glass-panel"
+                        style="margin-bottom: 2rem; padding: 1.5rem; background: rgba(59, 130, 246, 0.05);">
+                        <div style="display: flex; gap: 15px; align-items: flex-end; flex-wrap: wrap;">
+                            <div class="form-group" style="flex: 1; min-width: 300px; margin-bottom: 0;">
+                                <label style="display: flex; justify-content: space-between;">
+                                    <span><i class="fa-solid fa-paper-plane"></i> Enviar Mensaje en Tiempo Real</span>
+                                    <span id="socket-status-text"
+                                        style="font-size: 0.7rem; font-weight: bold; padding: 2px 8px; border-radius: 4px; background: rgba(0,0,0,0.2);">
+                                        <span style="color:#94a3b8">⚪ Verificando...</span>
+                                    </span>
+                                </label>
+                                <input type="text" id="admin-msg-input"
+                                    placeholder="Escribe un aviso o mensaje para los usuarios...">
+                            </div>
+                            <div class="form-group" style="width: 200px; margin-bottom: 0;">
+                                <label>Destinatario</label>
+                                <select id="admin-msg-target">
+                                    <option value="ALL">📢 Todos los Usuarios</option>
+                                    <!-- Options filled dynamically or by selecting a user -->
+                                </select>
+                            </div>
+                            <button class="cta-button" onclick="sendAdminMessage()">
+                                <i class="fa-solid fa-share"></i> Enviar ahora
+                            </button>
+                        </div>
+                        <small style="color: #94a3b8; display: block; margin-top: 10px;">
+                            * El mensaje aparecerá instantáneamente en la pantalla del reproductor del destinatario.
+                        </small>
+                    </div>
+
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th class="sortable" data-column="id">ID</th>
+                                <th class="sortable" data-column="name">Nombre</th>
+                                <th class="sortable" data-column="email">Email</th>
+                                <th class="sortable" data-column="phone">Teléfono</th>
+                                <th class="sortable" data-column="device_count">ID Dispositivo</th>
+                                <th class="sortable" data-column="license_summary">Licencia</th>
+                                <th class="sortable" data-column="last_seen">Última Conexión</th>
+                                <th class="sortable" data-column="referred_by">Registro</th>
+                                <th>Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody id="all-users-module-table-body">
+                            <!-- Filled by JS -->
+                        </tbody>
+                    </table>
+                </section>
+            </div>
+
+            <!-- Licenses Module Section -->
+            <div id="licenses-module-section" class="content-section hidden">
+                <section class="license-section glass-panel">
+                    <h3><i class="fa-solid fa-wand-magic-sparkles"></i> Generador de Licencias</h3>
+                    <div class="generator-controls">
+                        <select id="license-type">
+                            <option value="1_DAY">1 Día (24 Horas)</option>
+                            <option value="30_DAYS">30 Días (1 Mes)</option>
+                            <option value="PERMANENT">Permanente (Lifetime)</option>
+                        </select>
+                        <input type="number" id="license-count" value="1" min="1" max="100">
+                        <button id="generate-btn" class="cta-button" onclick="generateKeys()">Generar Claves</button>
+                    </div>
+
+                    <div id="generated-keys-output" class="keys-output hidden">
+                        <h4>Claves Generadas:</h4>
+                        <textarea id="keys-area" readonly></textarea>
+                        <button onclick="copyKeys()">Copiar al Portapapeles</button>
+                    </div>
+                </section>
+
+                <section class="users-section glass-panel" style="margin-top: 20px;">
+                    <div class="section-header">
+                        <h3><i class="fa-solid fa-key"></i> Claves en el Sistema</h3>
+                        <button class="action-btn delete" onclick="deleteAllUnused()"><i
+                                class="fa-solid fa-trash-can"></i> Limpiar Libres</button>
+                    </div>
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th class="sortable" data-column="user_name">Usuario</th>
+                                <th class="sortable" data-column="key">Clave</th>
+                                <th class="sortable" data-column="type">Tipo</th>
+                                <th class="sortable" data-column="expires_at">Expira</th>
+                                <th class="sortable" data-column="status">Estado</th>
+                                <th>Acción</th>
+                            </tr>
+                        </thead>
+                        <tbody id="all-licenses-table-body">
+                            <!-- Filled by JS -->
+                        </tbody>
+                    </table>
+                </section>
+            </div>
+
+            <!-- Global Config Section -->
+            <div id="config-section" class="content-section hidden">
+                <section class="config-section glass-panel">
+                    <h3><i class="fa-solid fa-gears"></i> Configuración Global (App)</h3>
+                    <div class="config-grid">
+                        <div class="form-group">
+                            <label>WhatsApp Soporte (Número)</label>
+                            <input type="text" id="config-wa-num" placeholder="521234567890">
+                        </div>
+                        <div class="form-group">
+                            <label>WhatsApp Soporte (Texto)</label>
+                            <input type="text" id="config-wa-msg" placeholder="Solicitar por WhatsApp">
+                        </div>
+                        <div class="form-group">
+                            <label>Solicitar Código (Número)</label>
+                            <input type="text" id="config-code-num" placeholder="521234567890">
+                        </div>
+                        <div class="form-group">
+                            <label>Solicitar Código (Texto)</label>
+                            <input type="text" id="config-code-msg" placeholder="Solicitar código de activación">
+                        </div>
+                        <div class="form-group"
+                            style="grid-column: span 2; border-top: 1px solid var(--glass-border); padding-top: 15px; margin-top: 10px;">
+                            <label><i class="fa-solid fa-database"></i> URL de Base de Datos (Sincronización)</label>
+                        </div>
+                        <div class="form-group" style="grid-column: span 2;">
+                            <label>URL Principal (musica.json)</label>
+                            <input type="text" id="config-sync-url" placeholder="https://...">
+                        </div>
+                        <div class="form-group">
+                            <label>Bucket Name (Principal)</label>
+                            <input type="text" id="config-bucket-name" placeholder="tecnobanda">
+                        </div>
+                        <div class="form-group">
+                            <label>S3 Endpoint (Principal)</label>
+                            <input type="text" id="config-s3-endpoint" placeholder="s3.us-west-004.backblazeb2.com">
+                        </div>
+                        <div class="form-group" style="grid-column: span 2;">
+                            <label>Dominio de Descarga (Friendly Domain)</label>
+                            <input type="text" id="config-endpoint" placeholder="f004.backblazeb2.com">
+                        </div>
+
+                        <div class="form-group"
+                            style="grid-column: span 2; border-top: 1px solid var(--glass-border); padding-top: 10px;">
+                            <label>URL Alterna 1 (Emergencia)</label>
+                            <input type="text" id="config-sync-url-alt1" placeholder="https://...">
+                        </div>
+                        <div class="form-group">
+                            <label>Bucket Name (Alt 1)</label>
+                            <input type="text" id="config-bucket-name-alt1" placeholder="tecnobanda-mirror">
+                        </div>
+                        <div class="form-group">
+                            <label>S3 Endpoint (Alt 1)</label>
+                            <input type="text" id="config-s3-endpoint-alt1"
+                                placeholder="s3.us-west-004.backblazeb2.com">
+                        </div>
+                        <div class="form-group" style="grid-column: span 2;">
+                            <label>Dominio de Descarga (Alt 1)</label>
+                            <input type="text" id="config-endpoint-alt1" placeholder="f004.backblazeb2.com">
+                        </div>
+
+                        <div class="form-group"
+                            style="grid-column: span 2; border-top: 1px solid var(--glass-border); padding-top: 10px;">
+                            <label>URL Alterna 2 (Emergencia)</label>
+                            <input type="text" id="config-sync-url-alt2" placeholder="https://...">
+                        </div>
+                        <div class="form-group">
+                            <label>Bucket Name (Alt 2)</label>
+                            <input type="text" id="config-bucket-name-alt2" placeholder="tecnobanda-mirror2">
+                        </div>
+                        <div class="form-group">
+                            <label>S3 Endpoint (Alt 2)</label>
+                            <input type="text" id="config-s3-endpoint-alt2"
+                                placeholder="s3.us-west-004.backblazeb2.com">
+                        </div>
+                        <div class="form-group" style="grid-column: span 2;">
+                            <label>Dominio de Descarga (Alt 2)</label>
+                            <input type="text" id="config-endpoint-alt2" placeholder="f004.backblazeb2.com">
+                        </div>
+                        <div class="form-group" style="grid-column: span 2;">
+                            <button class="cta-button" onclick="saveGlobalConfig()" style="width: 100%;">Guardar
+                                Configuración de la App</button>
+                        </div>
+                    </div>
+                </section>
+            </div>
+            <!-- Email Server Config Section -->
+            <div id="email-config-section" class="content-section hidden">
+                <section class="config-section glass-panel">
+                    <h3><i class="fa-solid fa-envelope-circle-check"></i> Configuración del Servidor de Correo (SMTP)
+                    </h3>
+                    <p style="color: #94a3b8; font-size: 0.9rem; margin-bottom: 2rem;">Configura los datos para el envío
+                        automático de claves de acceso.</p>
+                    <div class="config-grid">
+                        <div class="form-group" style="grid-column: span 2;">
+                            <label>Proveedor / Servicio (ej: gmail)</label>
+                            <input type="text" id="email-service" placeholder="gmail">
+                        </div>
+                        <div class="form-group" style="grid-column: span 2;">
+                            <label>Usuario / Correo Remitente</label>
+                            <input type="email" id="email-user" placeholder="tu-correo@gmail.com">
+                        </div>
+                        <div class="form-group" style="grid-column: span 2;">
+                            <label>Contraseña / App Password</label>
+                            <input type="password" id="email-pass" placeholder="xxxx xxxx xxxx xxxx">
+                            <small style="color: #64748b;">Si usas Gmail, recuerda generar una "Contraseña de
+                                Aplicación".</small>
+                        </div>
+                        <div class="form-group" style="grid-column: span 2;">
+                            <label>Nombre del Remitente</label>
+                            <input type="text" id="email-from-name" placeholder="TecnoBanda Support">
+                        </div>
+                        <div class="form-group" style="grid-column: span 2; margin-top: 1rem;">
+                            <button class="cta-button" onclick="saveEmailConfig()" style="width: 100%;">Guardar Ajustes
+                                de Correo</button>
+                        </div>
+                    </div>
+                </section>
+            </div>
+
+            <!-- Marketing / Referidos Config Section -->
+            <div id="referral-config-section" class="content-section hidden">
+                <section class="config-section glass-panel">
+                    <h3><i class="fa-solid fa-bullhorn"></i> Sistema de Referidos e Invitaciones</h3>
+                    <p style="color: #94a3b8; font-size: 0.9rem; margin-bottom: 2rem;">Configura cuántos amigos debe
+                        invitar un cliente para ganar una licencia gratuita.</p>
+
+                    <div class="config-grid">
+                        <div class="form-group" style="grid-column: span 2;">
+                            <label>Meta de Invitados (X)</label>
+                            <input type="number" id="config-referral-meta" placeholder="5" min="1">
+                            <small style="color: #64748b;">Cada que un cliente invitado active una licencia, su
+                                "Padrino" ganará 1 punto. Al llegar a esta meta, recibirá una licencia de 1 día.</small>
+                        </div>
+
+                        <div class="form-group" style="grid-column: span 2; margin-top: 1rem;">
+                            <button class="cta-button" onclick="saveReferralConfig()" style="width: 100%;">Guardar
+                                Ajustes de Referidos</button>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Referral Stats KPI -->
+                <div class="stats-row" style="margin-top: 20px;">
+                    <div class="stat-card glass-panel" onclick="showReferredUsers()" style="cursor: pointer;">
+                        <div class="stat-icon"><i class="fa-solid fa-users-rays"></i></div>
+                        <div class="stat-val" id="stat-total-referrals">0</div>
+                        <div class="stat-label">Total de Registros con Código</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Audio Management Section -->
+            <div id="audio-management-section" class="content-section hidden">
+                <div class="audio-management-grid">
+                    <!-- Intros Management -->
+                    <section class="config-section glass-panel">
+                        <h3><i class="fa-solid fa-bolt"></i> Intros de Entrada</h3>
+                        <div class="upload-zone" id="drop-zone-intros">
+                            <input type="file" id="upload-intro-input" accept="audio/mpeg, audio/wav" class="hidden">
+                            <button class="cta-button" onclick="document.getElementById('upload-intro-input').click()">
+                                <i class="fa-solid fa-upload"></i> Subir Nueva Intro
+                            </button>
+                            <p style="font-size: 0.8rem; color: #94a3b8; margin-top: 10px;">o arrastra el archivo aquí
+                            </p>
+                        </div>
+                        <div class="audio-list-container" style="margin-top: 20px;">
+                            <ul id="intros-list" class="audio-admin-list">
+                                <!-- Filled by JS -->
+                            </ul>
+                        </div>
+                    </section>
+
+                    <!-- Ambient Management -->
+                    <section class="config-section glass-panel">
+                        <h3><i class="fa-solid fa-leaf"></i> Música de Ambiente</h3>
+                        <div class="upload-zone" id="drop-zone-ambient">
+                            <input type="file" id="upload-ambient-input" accept="audio/mpeg, audio/wav" class="hidden">
+                            <button class="cta-button"
+                                onclick="document.getElementById('upload-ambient-input').click()">
+                                <i class="fa-solid fa-upload"></i> Sub Nuevo Ambiente
+                            </button>
+                            <p style="font-size: 0.8rem; color: #94a3b8; margin-top: 10px;">o arrastra el archivo aquí
+                            </p>
+                        </div>
+                        <div class="audio-list-container" style="margin-top: 20px;">
+                            <ul id="ambient-list" class="audio-admin-list">
+                                <!-- Filled by JS -->
+                            </ul>
+                        </div>
+                    </section>
+                </div>
+            </div>
+
+            <!-- Music Library Section -->
+            <div id="music-library-section" class="content-section hidden">
+                <section class="config-section glass-panel">
+                    <div class="form-group"
+                        style="margin-bottom: 25px; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 20px;">
+                        <label
+                            style="font-size: 1.1rem; color: #fff; font-weight: 600; display: block; margin-bottom: 10px;">
+                            <i class="fa-solid fa-folder-open"></i> Librería musical
+                        </label>
+                        <div style="display: flex; align-items: center; gap: 15px;">
+                            <input type="text" id="config-music-path" placeholder="Ej: D:\Musica o musica/"
+                                style="flex-grow: 1;">
+                            <div
+                                style="display: flex; align-items: center; gap: 8px; background: rgba(255,255,255,0.05); padding: 5px 15px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.1);">
+                                <label for="config-vigilante-enabled"
+                                    style="margin: 0; cursor: pointer; font-size: 0.9rem;">Vigilante</label>
+                                <input type="checkbox" id="config-vigilante-enabled"
+                                    style="width: 18px; height: 18px; cursor: pointer;">
+                            </div>
+                            <button class="cta-button" onclick="saveGlobalConfig()" style="white-space: nowrap;">
+                                <i class="fa-solid fa-floppy-disk"></i> Guardar Ruta
+                            </button>
+                        </div>
+                        <small style="color: #94a3b8; display: block; margin-top: 8px;">
+                            Configura la carpeta donde el servidor lee los archivos y donde el Vigilante sincroniza con
+                            la nube.
+                        </small>
+                    </div>
+
+                    <div class="section-header">
+                        <h3><i class="fa-solid fa-folder-tree"></i> Explorador de Archivos (musica/)</h3>
+                        <div style="display: flex; gap: 10px;">
+                            <input type="file" id="music-upload-input" class="hidden" onchange="uploadMusicFile()">
+                            <button class="cta-button" onclick="document.getElementById('music-upload-input').click()">
+                                <i class="fa-solid fa-cloud-arrow-up"></i> Subir Archivo
+                            </button>
+                            <button class="secondary-btn" onclick="fetchMusicLibrary()">
+                                <i class="fa-solid fa-rotate"></i> Actualizar
+                            </button>
+                        </div>
+                    </div>
+                    <div class="library-container">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th class="sortable" data-column="name">Nombre del Archivo</th>
+                                    <th class="sortable" data-column="size_bytes">Tamaño</th>
+                                    <th class="sortable" data-column="date">Fecha Modif.</th>
+                                    <th>Acciones</th>
+                                </tr>
+                            </thead>
+                            <tbody id="music-library-body">
+                                <!-- Filled by JS -->
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+            </div>
+
+            <!-- Audit Logs Section -->
+            <div id="audit-logs-section" class="content-section hidden">
+                <section class="users-section glass-panel">
+                    <div class="section-header">
+                        <h3><i class="fa-solid fa-shield-halved"></i> Registro de Actividad Administrativa</h3>
+                    </div>
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th class="sortable" data-column="created_at">Fecha/Hora</th>
+                                <th class="sortable" data-column="action">Acción</th>
+                                <th class="sortable" data-column="details">Detalles</th>
+                                <th class="sortable" data-column="admin_user">Admin</th>
+                            </tr>
+                        </thead>
+                        <tbody id="audit-logs-body">
+                            <!-- Filled by JS -->
+                        </tbody>
+                    </table>
+                </section>
+            </div>
+    </div>
+
+    <!-- Edit User Modal -->
+    <div id="edit-modal" class="modal-overlay hidden">
+        <div class="modal-content glass-panel">
+            <div class="modal-header">
+                <h3><i class="fa-solid fa-user-pen"></i> Editar Usuario</h3>
+                <button class="action-btn" onclick="closeModal()"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="edit-user-id">
+                <div class="form-group">
+                    <label>Nombre</label>
+                    <input type="text" id="edit-name">
+                </div>
+                <div class="form-group">
+                    <label>Email</label>
+                    <input type="email" id="edit-email">
+                </div>
+                <div class="form-group">
+                    <label>Teléfono</label>
+                    <input type="text" id="edit-phone">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="secondary-btn" onclick="closeModal()">Cancelar</button>
+                <button id="save-user-btn" class="cta-button" onclick="saveUser()">Guardar Cambios</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- User Details (Multi-Device) Modal -->
+    <div id="user-details-modal" class="modal-overlay hidden">
+        <div class="modal-content glass-panel" style="max-width: 800px; width: 95%;">
+            <div class="modal-header">
+                <div>
+                    <h3 id="detail-user-name">Nombre del Usuario</h3>
+                    <p id="detail-user-email" style="font-size: 0.85rem; color: #94a3b8;"></p>
+                </div>
+                <button class="action-btn" onclick="closeDetailsModal()"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="modal-body">
+                <div id="detail-referral-info"
+                    style="margin-bottom: 20px; padding: 15px; background: rgba(59, 130, 246, 0.05); border-radius: 8px; display: flex; gap: 20px; flex-wrap: wrap;">
+                    <div><small style="color: #94a3b8;">Código Propio:</small> <br><b id="detail-my-code">----</b></div>
+                    <div><small style="color: #94a3b8;">Invitado por:</small> <br><b id="detail-invited-by">----</b>
+                    </div>
+                    <div><small style="color: #94a3b8;">Puntos Acumulados:</small> <br><b id="detail-points">0</b></div>
+                    <div><small style="color: #94a3b8;">Regalos en Pantalla:</small> <br><b
+                            id="detail-pending-gifts">0</b></div>
+                    <div><small style="color: #94a3b8;">Total Premios Ganados:</small> <br><b id="detail-total-gifts"
+                            style="color: #FFD700;">0</b></div>
+                </div>
+                <div class="devices-list-header">
+                    <h4>Dispositivos y Licencias Vinculadas</h4>
+                </div>
+                <div class="details-table-container">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Dispositivo</th>
+                                <th>Licencia</th>
+                                <th>Vencimiento</th>
+                                <th>Estado</th>
+                                <th>Acción</th>
+                            </tr>
+                        </thead>
+                        <tbody id="user-devices-list">
+                            <!-- Filled by JS -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Export Libraries (Excel & PDF) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.25/jspdf.plugin.autotable.min.js"></script>
+
+    <script src="script.js?v=2026.2"></script>
+</body>
+
+</html>

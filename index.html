@@ -1,0 +1,891 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TecnoBanda - Control Profesional Digital</title>
+    <link rel="stylesheet" href="styles.css">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Sortable/1.15.0/Sortable.min.js"></script>
+    <script src="/socket.io/socket.io.js"></script>
+
+    <!-- PWA Support -->
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#3b82f6">
+    <link rel="apple-touch-icon" href="https://cdn-icons-png.flaticon.com/512/3844/3844724.png">
+</head>
+
+<body>
+    <div class="background-mesh"></div>
+
+    <div class="main-wrapper">
+        <header class="app-header">
+            <h1 class="premium-title">TecnoBanda</h1>
+            <p class="subtitle">Control Profesional Digital</p>
+        </header>
+
+        <main class="app-grid">
+            <!-- Left Side: Tabs (Novedades & Mis Listas) -->
+            <aside class="recent-adds-column">
+                <section class="recent-adds-panel glass-panel">
+                    <div class="panel-tabs">
+                        <button class="tab-btn active" id="tab-novedades" onclick="switchLeftTab('novedades')">
+                            <i class="fa-solid fa-sparkles"></i> Novedades
+                        </button>
+                        <button class="tab-btn" id="tab-listas" onclick="switchLeftTab('listas')">
+                            <i class="fa-solid fa-folder-open"></i> Mis Listas
+                        </button>
+                    </div>
+
+                    <!-- Novedades Content -->
+                    <div id="tab-content-novedades" class="tab-content-view">
+                        <div id="recent-list" class="recent-list-items">
+                            <div class="empty-msg">Sincronizando...</div>
+                        </div>
+                    </div>
+
+                    <!-- Mis Listas Content -->
+                    <div id="tab-content-listas" class="tab-content-view hidden">
+                        <div class="listas-actions">
+                            <button class="cta-button primary-style" onclick="createNewList()"
+                                style="margin-top: 5px; padding: 8px; font-size: 0.8rem;">
+                                <i class="fa-solid fa-plus"></i> Nueva Lista
+                            </button>
+                        </div>
+                        <div id="user-playlists-container" class="recent-list-items" style="margin-top: 15px;">
+                            <!-- Filled by JS -->
+                            <div class="empty-msg">No tienes listas creadas</div>
+                        </div>
+                    </div>
+
+                    <!-- Playlist Detail View -->
+                    <div id="tab-content-playlist-detail" class="tab-content-view hidden">
+                        <div class="detail-info"
+                            style="margin-bottom: 20px; border-bottom: 1px solid var(--glass-border); padding-bottom: 15px;">
+                            <h4 id="detail-list-name" style="color: var(--primary); margin: 0; font-size: 1.2rem;">
+                                Nombre de la Lista</h4>
+                            <span id="detail-list-count" style="font-size: 0.8rem; color: var(--text-dim);">0
+                                canciones</span>
+                        </div>
+
+                        <button class="cta-button primary-style" id="load-playlist-to-queue-btn"
+                            style="margin-top: 5px; padding: 12px; font-size: 0.9rem; background: linear-gradient(to right, #3b82f6, #60a5fa); font-weight: 800; width: 100%;">
+                            <i class="fa-solid fa-play-list"></i> CARGAR TODO A ESPERA
+                        </button>
+
+                        <div id="playlist-songs-container" class="recent-list-items" style="margin-top: 20px;">
+                            <!-- Filled by JS -->
+                        </div>
+                    </div>
+                </section>
+            </aside>
+
+            <!-- Center Side: Mixer -->
+            <section class="mixer-card glass-panel">
+                <!-- Search Bar - Central Focus -->
+                <div class="library-status-bar">
+                    <span id="library-count-display"><i class="fa-solid fa-list-music"></i> Cargando
+                        biblioteca...</span>
+                </div>
+                <div class="main-search-container">
+                    <div class="search-box-unified glass-panel">
+                        <i class="fa-solid fa-magnifying-glass"></i>
+                        <input type="text" id="main-search-input" placeholder="Buscar canción...">
+                    </div>
+                    <div id="main-search-results" class="results-dropdown hidden glass-panel"></div>
+                </div>
+
+                <!-- Now Playing Card -->
+                <div class="now-playing-card-v3">
+                    <div class="np-main-row">
+                        <div class="np-info-side">
+                            <h2 id="current-track-title">Selección Musical</h2>
+                            <p id="current-track-artist">Listo para sonar</p>
+                            <span class="np-source">Local</span>
+
+                            <div class="seek-area-v3">
+                                <span id="current-time">0:00</span>
+                                <input type="range" id="seek-bar" class="seek-bar-v3" min="0" max="100" value="0">
+                                <span id="total-time">0:00</span>
+                            </div>
+                        </div>
+
+                        <div class="np-controls-side">
+                            <button class="play-btn-large" id="play-pause-btn" title="Reproducir/Pausar [Espacio]">
+                                <i class="fa-solid fa-play"></i>
+                            </button>
+                            <button class="next-btn-small" id="next-track-btn" title="Siguiente canción [N]">
+                                <i class="fa-solid fa-forward-step"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Stems Grid -->
+                <div class="stems-grid">
+                    <!-- Bajo -->
+                    <div class="stem-card">
+                        <div class="stem-header">
+                            <div class="stem-info">
+                                <i class="fa-solid fa-guitar stem-icon-small" style="color: #ff4757;"></i>
+                                <div class="stem-text">
+                                    <span class="stem-name">Bajo</span>
+                                </div>
+                            </div>
+                            <label class="switch">
+                                <input type="checkbox" checked id="toggle-bass">
+                                <span class="slider round"></span>
+                            </label>
+                        </div>
+                        <div class="vol-control">
+                            <input type="range" min="0" max="100" value="100" class="volume-slider" id="vol-bass">
+                        </div>
+                    </div>
+
+                    <!-- Bateria -->
+                    <div class="stem-card">
+                        <div class="stem-header">
+                            <div class="stem-info">
+                                <i class="fa-solid fa-drum stem-icon-small" style="color: #ffa502;"></i>
+                                <div class="stem-text">
+                                    <span class="stem-name">Batería</span>
+                                </div>
+                            </div>
+                            <label class="switch">
+                                <input type="checkbox" checked id="toggle-drums">
+                                <span class="slider round"></span>
+                            </label>
+                        </div>
+                        <div class="vol-control">
+                            <input type="range" min="0" max="100" value="100" class="volume-slider" id="vol-drums">
+                        </div>
+                    </div>
+
+                    <!-- Guitarra -->
+                    <div class="stem-card">
+                        <div class="stem-header">
+                            <div class="stem-info">
+                                <i class="fa-solid fa-guitar-acoustic stem-icon-small" style="color: #2ed573;"></i>
+                                <div class="stem-text">
+                                    <span class="stem-name">Guitarra</span>
+                                </div>
+                            </div>
+                            <label class="switch">
+                                <input type="checkbox" checked id="toggle-guitar">
+                                <span class="slider round"></span>
+                            </label>
+                        </div>
+                        <div class="vol-control">
+                            <input type="range" min="0" max="100" value="100" class="volume-slider" id="vol-guitar">
+                        </div>
+                    </div>
+
+                    <!-- Armonia -->
+                    <div class="stem-card">
+                        <div class="stem-header">
+                            <div class="stem-info">
+                                <i class="fa-solid fa-saxophones stem-icon-small" style="color: #1e90ff;"></i>
+                                <div class="stem-text">
+                                    <span class="stem-name">Armonía</span>
+                                </div>
+                            </div>
+                            <label class="switch">
+                                <input type="checkbox" checked id="toggle-harmony">
+                                <span class="slider round"></span>
+                            </label>
+                        </div>
+                        <div class="vol-control">
+                            <input type="range" min="0" max="100" value="100" class="volume-slider" id="vol-harmony">
+                        </div>
+                    </div>
+
+                    <!-- Voz -->
+                    <div class="stem-card">
+                        <div class="stem-header">
+                            <div class="stem-info">
+                                <i class="fa-solid fa-microphone-lines stem-icon-small" style="color: #e84393;"></i>
+                                <div class="stem-text">
+                                    <span class="stem-name">Voz</span>
+                                </div>
+                            </div>
+                            <label class="switch">
+                                <input type="checkbox" checked id="toggle-vocals">
+                                <span class="slider round"></span>
+                            </label>
+                        </div>
+                        <div class="vol-control">
+                            <input type="range" min="0" max="100" value="100" class="volume-slider" id="vol-vocals">
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Right Side: Queue Panel -->
+            <div class="queue-module-wrapper">
+                <!-- Referral Code Section -->
+                <div id="referral-box-sidebar" class="glass-panel hidden"
+                    style="padding: 15px; background: rgba(59, 130, 246, 0.1); border-radius: 12px; text-align: center; margin-bottom: 10px; width: 90%; align-self: center;">
+                    <label class="reg-label"
+                        style="text-align: center; color: var(--primary); font-size: 0.75rem; margin-bottom: 8px; display: block;">CÓDIGO
+                        DE INVITACIÓN</label>
+                    <div id="referral-code-display-area" class="hidden">
+                        <div
+                            style="display: flex; gap: 10px; align-items: center; justify-content: center; margin-top: 5px;">
+                            <code id="my-referral-code"
+                                style="font-size: 1.2rem; font-weight: 800; letter-spacing: 2px; color: white;">----</code>
+                            <button onclick="copyMyReferralCode()" class="action-btn" title="Copiar Código"
+                                style="background: var(--primary); color: white; padding: 5px 8px; border-radius: 4px; border: none; cursor: pointer;">
+                                <i class="fa-solid fa-copy"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <button id="generate-referral-btn" class="cta-button primary-style"
+                        style="margin-top: 5px; padding: 8px; font-size: 0.8rem;" onclick="fetchMyReferralCode()">
+                        <i class="fa-solid fa-wand-magic-sparkles"></i> VER MI CÓDIGO
+                    </button>
+                    <div id="referral-info-sidebar"
+                        style="margin-top: 12px; padding-top: 10px; border-top: 1px solid rgba(255,255,255,0.05); text-align: left;">
+                        <p style="font-size: 0.72rem; color: #60a5fa; font-weight: 700; margin-bottom: 4px;">
+                            <i class="fa-solid fa-gift"></i> ¡INVITA Y GANA!
+                        </p>
+                        <p style="font-size: 0.68rem; color: var(--text-dim); line-height: 1.3;">
+                            Comparte tu código. Al alcanzar las <b id="referral-meta-number">...</b> activaciones,
+                            ganarás <b>Licencias Gratis</b> automáticamente.
+                        </p>
+                    </div>
+                </div>
+
+                <div class="settings-btn-premium-container">
+                    <button class="pill-btn settings-pill-v2" id="settings-btn">
+                        <i class="fa-solid fa-sliders"></i> CONFIGURACIÓN
+                    </button>
+                </div>
+                <section class="queue-panel glass-panel" ondragover="window.handleQueueDragOver(event)"
+                    ondragleave="window.handleQueueDragLeave(event)" ondrop="window.handleQueueDrop(event)">
+                    <div class="queue-header">
+                        <h3><i class="fa-solid fa-clock-rotate-left"></i> Lista de Espera</h3>
+                        <span class="badge" id="queue-count">0</span>
+                    </div>
+                    <div id="queue-list" class="queue-list-items">
+                        <div class="empty-queue-msg">
+                            <i class="fa-solid fa-music-slash"></i>
+                            <p>No hay canciones en espera</p>
+                        </div>
+                    </div>
+                </section>
+            </div>
+        </main>
+
+    </div>
+
+    <!-- Registration/Login Modal -->
+    <div id="registration-modal" class="modal">
+        <div class="modal-content glass-panel" style="max-width: 420px; text-align: center;">
+            <div class="modal-header" style="justify-content: center;">
+                <h2 class="premium-title" style="font-size: 2rem;">Bienvenido</h2>
+            </div>
+            <p style="color: var(--text-dim); margin-bottom: 20px;">
+                Identifícate para acceder a tu perfil y licencias.
+            </p>
+
+            <!-- Registration Form (Visible by default) -->
+            <form id="registration-form">
+                <div class="setting-group">
+                    <label class="reg-label">Nombre Completo / DJ Name</label>
+                    <input type="text" id="reg-username" required placeholder="Ej. Juan Pérez" class="reg-input">
+                </div>
+                <div class="setting-group">
+                    <label class="reg-label">Correo Electrónico</label>
+                    <input type="email" id="reg-email" required placeholder="ejemplo@email.com" class="reg-input">
+                </div>
+                <div class="setting-group">
+                    <label class="reg-label">Número de WhatsApp (Sin +)</label>
+                    <input type="tel" id="reg-phone" required placeholder="526861234567" class="reg-input">
+                </div>
+                <div class="setting-group">
+                    <label class="reg-label">¿Tienes un código de amigo? (Opcional)</label>
+                    <input type="text" id="reg-referral" placeholder="CÓDIGO-1234" class="reg-input"
+                        style="text-transform: uppercase;">
+                </div>
+                <button type="submit" class="cta-button primary-style">
+                    <i class="fa-solid fa-user-plus"></i> Crear Cuenta
+                </button>
+                <p style="font-size: 0.8rem; margin: 15px 0;">
+                    ¿Ya tienes cuenta? <a href="#" onclick="showEmailLogin()" style="color: var(--primary);">Acceder con
+                        mi correo</a>
+                </p>
+            </form>
+
+            <!-- Email Login Form (Hidden by default) -->
+            <div id="email-login-form" class="hidden">
+                <div id="step-request-otp">
+                    <div class="setting-group">
+                        <label class="reg-label">Ingresa tu Correo Electrónico</label>
+                        <input type="email" id="login-email" placeholder="ejemplo@correo.com" class="reg-input">
+                    </div>
+                    <button class="cta-button primary-style" onclick="requestOTP()">
+                        <i class="fa-solid fa-paper-plane"></i> Enviar Clave al Correo
+                    </button>
+                </div>
+
+                <div id="step-verify-otp" class="hidden">
+                    <p style="color: var(--primary); font-size: 0.9rem; margin-bottom: 15px;">Hemos enviado una clave a
+                        tu correo.</p>
+                    <div class="setting-group">
+                        <label class="reg-label">Clave de 6 dígitos</label>
+                        <input type="text" id="login-otp" maxlength="6" placeholder="000000" class="reg-input"
+                            style="text-align: center; letter-spacing: 5px; font-size: 1.5rem;">
+                    </div>
+                    <button class="cta-button primary-style" onclick="verifyOTP()">
+                        <i class="fa-solid fa-right-to-bracket"></i> Entrar Seguro
+                    </button>
+                </div>
+                <button type="button" class="secondary-btn" onclick="hideAllAuthForms()"
+                    style="margin-top: 10px; width: 100%;">Volver</button>
+            </div>
+
+            <p style="font-size: 0.7rem; color: #555; margin-top: 15px;">Acceso seguro mediante encriptación SSL.</p>
+        </div>
+    </div>
+
+    <style>
+        .hidden {
+            display: none !important;
+        }
+
+        .divider-row {
+            display: flex;
+            align-items: center;
+            text-align: center;
+            margin: 15px 0;
+            color: #555;
+            font-size: 0.8rem;
+        }
+
+        .divider-row::before,
+        .divider-row::after {
+            content: "";
+            flex: 1;
+            border-bottom: 1px solid var(--glass-border);
+        }
+
+        .divider-row:not(:empty)::before {
+            margin-right: .5em;
+        }
+
+        .divider-row:not(:empty)::after {
+            margin-left: .5em;
+        }
+    </style>
+
+    <!-- Estilos Inline para el registro (solo para asegurar que se vea bien rápido) -->
+    <style>
+        .reg-label {
+            display: block;
+            text-align: left;
+            margin-bottom: 5px;
+            color: var(--primary);
+            font-size: 0.9rem;
+            font-weight: 600;
+        }
+
+        .reg-input {
+            width: 100%;
+            padding: 12px;
+            border-radius: 8px;
+            border: 1px solid var(--glass-border);
+            background: rgba(0, 0, 0, 0.3);
+            color: white;
+            outline: none;
+            margin-bottom: 10px;
+        }
+
+        .reg-input:focus {
+            border-color: var(--primary);
+            background: rgba(0, 0, 0, 0.5);
+        }
+
+        /* WhatsApp Action Buttons (Search) */
+        .wa-action-btn {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            background: #25D366;
+            color: white;
+            text-decoration: none;
+            padding: 12px 20px;
+            border-radius: 12px;
+            font-weight: 700;
+            font-size: 0.95rem;
+            transition: transform 0.2s, box-shadow 0.2s;
+            box-shadow: 0 4px 15px rgba(37, 211, 102, 0.3);
+            margin-top: 5px;
+        }
+
+        .wa-action-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(37, 211, 102, 0.4);
+        }
+
+        .wa-action-btn.code-style {
+            background: #3b82f6;
+            box-shadow: 0 4px 15px rgba(59, 130, 246, 0.3);
+        }
+
+        .wa-action-btn.code-style:hover {
+            box-shadow: 0 6px 20px rgba(59, 130, 246, 0.4);
+        }
+    </style>
+
+    <!-- Settings Modal -->
+    <div id="settings-modal" class="modal">
+        <div class="modal-content glass-panel" style="max-width: 500px; position: relative;">
+            <div class="modal-header">
+                <div style="display: flex; align-items: center; gap: 15px;">
+                    <h3>Panel de Control</h3>
+                    <button id="profile-btn-mini" class="logout-mini-inline" title="Mi Perfil"
+                        style="background: rgba(59, 130, 246, 0.1); color: var(--primary); border-radius: 20px; padding: 4px 12px; margin-top: 5px;">
+                        <i class="fa-solid fa-circle-user"></i> Perfil
+                    </button>
+                </div>
+                <button class="icon-close" id="settings-x-btn">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+
+            <!-- Source Selection -->
+            <!-- Status and Logout Mini Row -->
+            <div class="status-logout-row">
+                <div id="db-status-text" class="status-indicator">Base de datos no inicializada.</div>
+                <button id="logout-btn-mini" class="logout-mini-inline" title="Cerrar Sesión (Reset)"
+                    style="background: rgba(231, 76, 60, 0.15); color: #ff4757; padding: 8px 16px; font-size: 0.85rem;">
+                    <i class="fa-solid fa-right-from-bracket"></i> Cerrar sesión
+                </button>
+            </div>
+
+            <!-- Referral Code Section Removida de aquí y movida arriba del botón de ajustes -->
+
+
+            <button class="cta-button" id="open-activation-btn"
+                style="background: linear-gradient(45deg, #f1c40f, #e67e22); color: black; font-weight: 800; margin-bottom: 20px;">
+                <i class="fa-solid fa-key"></i> ACTIVAR LICENCIA PREMIUM
+            </button>
+
+            <!-- Core Settings -->
+            <div class="setting-group">
+                <h4 class="section-title"><i class="fa-solid fa-gear"></i> Preferencias</h4>
+
+                <!-- EQ Button -->
+                <button class="premium-eq-btn" id="open-eq-btn">
+                    <i class="fa-solid fa-sliders"></i> Ecualizador Maestro
+                </button>
+
+                <div class="setting-item-v2">
+                    <label class="check-container">
+                        <input type="checkbox" id="setting-intro-sound">
+                        <span class="checkmark"></span>
+                        Sonido de Entrada
+                    </label>
+                    <div class="sub-setting-files">
+                        <small>Elegir sonido de entrada:</small>
+                        <select id="default-intro-select" class="reg-input"
+                            style="margin-top: 5px; margin-bottom: 5px;">
+                            <option value="assets/intros/intro1.mp3">Intro TecnoBanda 1</option>
+                            <option value="assets/intros/intro2.mp3">Intro TecnoBanda 2</option>
+                            <option value="assets/intros/intro3.mp3">Intro Digital</option>
+                            <option value="assets/intros/intro4.mp3">Efecto Impacto</option>
+                        </select>
+                        <button id="preview-intro-btn" class="pill-btn"
+                            style="padding: 4px 10px; font-size: 0.7rem; background: #3b82f6; color: white; width: fit-content;">
+                            <i class="fa-solid fa-play"></i> Probar seleccionada
+                        </button>
+                    </div>
+                </div>
+
+                <div class="setting-item-v2">
+                    <label class="check-container">
+                        <input type="checkbox" id="setting-ambient-sound">
+                        <span class="checkmark"></span>
+                        Música de Ambiente
+                    </label>
+                    <div class="sub-setting-files">
+                        <small>Elegir música de fondo:</small>
+                        <select id="default-ambient-select" class="reg-input"
+                            style="margin-top: 5px; margin-bottom: 5px;">
+                            <option value="assets/ambient/soft.mp3">Ambiente Suave</option>
+                            <option value="assets/ambient/lounge.mp3">Lounge Bar</option>
+                            <option value="assets/ambient/crowd.mp3">Gente Murmullo</option>
+                            <option value="assets/ambient/party.mp3">Fiesta Alegre</option>
+                        </select>
+                        <button id="preview-ambient-btn" class="pill-btn"
+                            style="padding: 4px 10px; font-size: 0.7rem; background: #3b82f6; color: white; width: fit-content; margin-top: 5px;">
+                            <i class="fa-solid fa-play"></i> Probar seleccionada
+                        </button>
+                        <div class="fx-control" style="margin-top: 10px;">
+                            <small>Volumen Ambiente</small>
+                            <div class="input-with-label">
+                                <input type="range" id="ambient-vol-slider" min="0" max="100" value="100"
+                                    class="volume-slider">
+                                <span id="ambient-vol-val">100%</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="setting-item-v2"
+                    style="margin-top: 20px; border-top: 1px solid var(--glass-border); padding-top: 15px;">
+                    <label class="check-container">
+                        <input type="checkbox" id="setting-persist-queue">
+                        <span class="checkmark"></span>
+                        Recordar cola al cerrar
+                    </label>
+                    <small style="opacity: 0.5; display: block; margin-left: 30px;">Guarda tu lista para la
+                        próxima
+                        vez.</small>
+                </div>
+
+                <div class="setting-item-v2"
+                    style="margin-top: 10px; border-top: 1px solid var(--glass-border); padding-top: 15px;">
+                    <label class="check-container">
+                        <input type="checkbox" id="setting-apuntador">
+                        <span class="checkmark"></span>
+                        Activar Apuntador (Guía)
+                    </label>
+                    <small style="opacity: 0.5; display: block; margin-left: 30px;">
+                        Instrumentos por canal L, Voz por canal R.
+                    </small>
+                </div>
+
+                <!-- Voice FX Section -->
+                <div class="setting-item-v2"
+                    style="margin-top: 20px; border-top: 1px solid var(--glass-border); padding-top: 15px;">
+                    <h4 class="section-title"><i class="fa-solid fa-wand-magic-sparkles"></i> Efectos de Voz
+                        (Vocal FX)
+                    </h4>
+                    <div class="fx-control">
+                        <label>Reverberación (Reverb)</label>
+                        <div class="input-with-label">
+                            <input type="range" id="vocal-reverb-slider" min="0" max="100" value="0"
+                                class="volume-slider">
+                            <span id="reverb-val">0%</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Logout Area Removida de aquí y movida a la cabecera -->
+            <div class="setting-group"
+                style="margin-top: 10px; border-top: 1px solid var(--glass-border); padding-top: 20px;">
+                <!-- El botón de Cerrar Sesión ahora está arriba a la derecha -->
+            </div>
+
+            <button id="close-settings" class="cta-button primary-style" style="margin-top: 20px;">Guardar
+                Cambios</button>
+            <div id="settings-scroll-down" class="scroll-indicator scroll-down"><i class="fa-solid fa-chevron-down"></i>
+            </div>
+        </div>
+    </div>
+
+    <!-- Activation Modal (Introducir Código) -->
+    <div id="activation-modal" class="modal">
+        <div class="modal-content glass-panel" style="max-width: 400px; text-align: center;">
+            <div class="modal-header">
+                <h3><i class="fa-solid fa-unlock-keyhole"></i> Activar Licencia</h3>
+                <button class="icon-close"
+                    onclick="document.getElementById('activation-modal').classList.remove('active')">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+
+            <p style="text-align: center; margin-bottom: 20px;">Introduce el código de activación que recibiste.</p>
+
+            <div class="setting-group">
+                <input type="text" id="activation-code" placeholder="XXXX-XXXX-XXXX"
+                    style="width: 100%; padding: 15px; text-align: center; letter-spacing: 2px; font-weight: bold; font-size: 1.2rem; border-radius: 12px; border: 2px solid var(--primary); background: rgba(0,0,0,0.5); color: white; text-transform: uppercase; outline: none;">
+            </div>
+
+            <button id="submit-activation" class="cta-button primary-style">
+                <i class="fa-solid fa-check"></i> Verificar Código
+            </button>
+
+            <a id="wa-request-code-btn" href="#" target="_blank" class="wa-action-btn code-style"
+                style="margin-top: 20px;">
+                <i class="fa-brands fa-whatsapp"></i> Solicitar Código
+            </a>
+
+            <p id="activation-msg" style="text-align: center; margin-top: 15px; font-weight: bold; min-height: 20px;">
+            </p>
+        </div>
+    </div>
+
+    <!-- Equalizer Modal -->
+    <div id="eq-modal" class="modal">
+        <div class="modal-content glass-panel" style="max-width: 450px;">
+            <div class="modal-header">
+                <h3>Ecualizador Maestro</h3>
+                <button class="icon-close" onclick="document.getElementById('eq-modal').classList.remove('active')">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+            <div class="eq-body">
+                <div class="eq-slider-group">
+                    <label>Volumen General</label>
+                    <input type="range" id="master-vol-eq" min="0" max="150" value="100" class="volume-slider">
+                </div>
+                <div class="eq-faders" style="display: flex; justify-content: space-around; padding: 20px 0;">
+                    <div class="fader">
+                        <label>Bajo</label>
+                        <input type="range" id="eq-bass" min="-12" max="12" value="0" orient="vertical">
+                    </div>
+                    <div class="fader">
+                        <label>Medios</label>
+                        <input type="range" id="eq-mid" min="-12" max="12" value="0" orient="vertical">
+                    </div>
+                    <div class="fader">
+                        <label>Agudos</label>
+                        <input type="range" id="eq-treble" min="-12" max="12" value="0" orient="vertical">
+                    </div>
+                </div>
+            </div>
+            <button class="cta-button primary-style"
+                onclick="document.getElementById('eq-modal').classList.remove('active')">Aceptar</button>
+        </div>
+    </div>
+
+    <!-- Loading Progress Overlay -->
+    <div id="loading-overlay" class="loading-overlay hidden">
+        <div class="loading-content">
+            <div class="loading-main-label">CARGANDO</div>
+            <div class="progress-ring-container">
+                <svg class="progress-ring" width="200" height="200">
+                    <circle class="progress-ring__circle-bg" stroke="rgba(255,255,255,0.1)" stroke-width="12"
+                        fill="transparent" r="90" cx="100" cy="100" />
+                    <circle id="progress-ring-bar" class="progress-ring__circle" stroke="var(--primary)"
+                        stroke-width="12" stroke-linecap="round" fill="transparent" r="90" cx="100" cy="100" />
+                </svg>
+                <div class="loading-percentage"><span id="loading-pct-value">0</span>%</div>
+            </div>
+            <div class="loading-step-text" id="loading-step-text">Preparando archivos...</div>
+        </div>
+    </div>
+
+    <!-- User Profile Modal -->
+    <div id="user-profile-modal" class="modal">
+        <div class="modal-content glass-panel" style="max-width: 400px;">
+            <div class="modal-header">
+                <h3><i class="fa-solid fa-user-gear"></i> Mi Perfil</h3>
+                <button class="icon-close"
+                    onclick="document.getElementById('user-profile-modal').classList.remove('active')">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+
+            <p style="color: var(--text-dim); margin-bottom: 20px; font-size: 0.85rem;">Puedes actualizar tu nombre y
+                teléfono. El correo es permanente para tu historial de licencias.</p>
+
+            <div class="setting-group">
+                <label class="reg-label">Nombre Completo</label>
+                <input type="text" id="profile-name-in" class="reg-input">
+            </div>
+            <div class="setting-group">
+                <label class="reg-label">Correo (Solo lectura)</label>
+                <input type="text" id="profile-email-in" class="reg-input" disabled
+                    style="opacity: 0.5; cursor: not-allowed;">
+            </div>
+            <div class="setting-group">
+                <label class="reg-label">Teléfono / WhatsApp</label>
+                <input type="tel" id="profile-phone-in" class="reg-input">
+            </div>
+
+            <div style="display: flex; gap: 10px; margin-top: 20px;">
+                <button class="secondary-btn" style="flex: 1;"
+                    onclick="document.getElementById('user-profile-modal').classList.remove('active')">Cancelar</button>
+                <button id="save-profile-btn" class="cta-button primary-style" style="flex: 2; margin-top: 0;">Guardar
+                    Cambios</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="toast" class="toast hidden">Notificación</div>
+
+    <script>
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('./sw.js')
+                    .then(reg => console.log('✓ Service Worker activo', reg))
+                    .catch(err => console.error('❌ Error SW', err));
+            });
+        }
+    </script>
+    <script src="app.js"></script>
+    <!-- Custom Elegant Action Modal (Prompt/Confirm) -->
+    <div id="action-modal" class="modal">
+        <div class="modal-content glass-panel"
+            style="max-width: 420px; text-align: center; border: 1px solid var(--primary);">
+            <div id="action-modal-icon" style="font-size: 3rem; color: var(--primary); margin-bottom: 20px;">
+                <i class="fa-solid fa-circle-question"></i>
+            </div>
+            <h3 id="action-modal-title" style="margin-bottom: 10px; color: var(--primary);">Confirmación</h3>
+            <p id="action-modal-desc" style="color: var(--text-dim); margin-bottom: 20px; font-size: 0.95rem;"></p>
+
+            <div id="action-modal-input-container" class="setting-group hidden">
+                <input type="text" id="action-modal-input" class="reg-input"
+                    style="text-align: center; font-size: 1.1rem; border-color: var(--primary);"
+                    placeholder="Escribe aquí...">
+            </div>
+
+            <div style="display: flex; gap: 15px; margin-top: 30px;">
+                <button id="action-modal-cancel" class="secondary-btn" style="flex: 1; padding: 12px;">Cerrar</button>
+                <button id="action-modal-confirm" class="cta-button primary-style"
+                    style="flex: 1; margin-top: 0; padding: 12px; background: var(--primary);">Aceptar</button>
+            </div>
+        </div>
+    </div>
+    </div>
+    </div>
+
+    <!-- Floating Gift Icon -->
+    <div id="floating-gift" class="floating-gift hidden" onclick="openGiftModal()">
+        <div class="gift-animation">
+            <i class="fa-solid fa-box-open"></i>
+            <div class="gift-glow"></div>
+        </div>
+        <span class="gift-count">1</span>
+    </div>
+
+    <!-- Gift Claim Modal -->
+    <div id="gift-claim-modal" class="modal">
+        <div class="modal-content glass-panel" style="max-width: 420px; text-align: center; border: 2px solid #FFD700;">
+            <div style="font-size: 4rem; color: #FFD700; margin-bottom: 20px;" class="jump-animation">
+                <i class="fa-solid fa-gift"></i>
+            </div>
+            <h2 style="color: #FFD700; margin-bottom: 15px;">¡Felicidades! 🎉</h2>
+            <p style="font-size: 1.1rem; line-height: 1.6; margin-bottom: 25px;">
+                Has ganado una <b>Licencia Gratuita de 1 Día</b> por referir nuevos clientes a TecnoBanda.
+                <br><br>
+                Hemos enviado tu código de activación a tu <b>correo electrónico</b>. ¡Búscalo y actívalo cuando gustes!
+            </p>
+            <button class="cta-button" onclick="claimGift()"
+                style="background: #FFD700; color: black; font-weight: 800; width: 100%;">
+                ¡GRACIAS, LO ENTIENDO!
+            </button>
+        </div>
+    </div>
+
+    <style>
+        .floating-gift {
+            position: fixed;
+            bottom: 30px;
+            right: 30px;
+            width: 70px;
+            height: 70px;
+            background: linear-gradient(135deg, #FFD700, #FFA000);
+            border-radius: 50%;
+            cursor: pointer;
+            z-index: 9999;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 10px 25px rgba(255, 215, 0, 0.4);
+            transition: transform 0.3s;
+        }
+
+        .floating-gift:hover {
+            transform: scale(1.1) rotate(5deg);
+        }
+
+        .gift-animation {
+            font-size: 2rem;
+            color: white;
+            position: relative;
+            animation: giftShake 2s infinite;
+        }
+
+        @keyframes giftShake {
+
+            0%,
+            100% {
+                transform: rotate(0);
+            }
+
+            10%,
+            30%,
+            50%,
+            70%,
+            90% {
+                transform: rotate(-10deg);
+            }
+
+            20%,
+            40%,
+            60%,
+            80% {
+                transform: rotate(10deg);
+            }
+        }
+
+        .gift-glow {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 100%;
+            height: 100%;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.5);
+            filter: blur(15px);
+            z-index: -1;
+            animation: giftPulse 2s infinite;
+        }
+
+        @keyframes giftPulse {
+            0% {
+                transform: translate(-50%, -50%) scale(0.8);
+                opacity: 0.5;
+            }
+
+            50% {
+                transform: translate(-50%, -50%) scale(1.2);
+                opacity: 0.8;
+            }
+
+            100% {
+                transform: translate(-50%, -50%) scale(0.8);
+                opacity: 0.5;
+            }
+        }
+
+        .gift-count {
+            position: absolute;
+            top: -5px;
+            right: -5px;
+            background: #e74c3c;
+            color: white;
+            font-size: 0.8rem;
+            font-weight: bold;
+            padding: 2px 8px;
+            border-radius: 10px;
+            border: 2px solid white;
+        }
+
+        .jump-animation {
+            animation: jump 1s infinite alternate;
+        }
+
+        @keyframes jump {
+            from {
+                transform: translateY(0);
+            }
+
+            to {
+                transform: translateY(-20px);
+            }
+        }
+    </style>
+</body>
+
+</html>

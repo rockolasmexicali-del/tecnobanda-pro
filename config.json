@@ -1,0 +1,37 @@
+{
+    "appTitle": "TecnoBanda",
+    "musicPath": "D:\\Musica Tecnobanda\\APP",
+    "vigilanteEnabled": true,
+    "whatsappNumber": "526861329430",
+    "whatsappMessage": "Solicitarla por WhatsApp",
+    "requestCodeNumber": "526862523931",
+    "requestCodeMessage": "Solicitar código de activación",
+    "syncUrl": "https://f004.backblazeb2.com/file/tecnobanda/musica.json",
+    "bucketName": "tecnobanda",
+    "s3Endpoint": "s3.us-west-004.backblazeb2.com",
+    "endpoint": "f004.backblazeb2.com",
+    "themeColor": "#3b82f6",
+    "showSourceInNP": true,
+    "isTrialMode": true,
+    "trialLimit": 10,
+    "syncUrlAlt1": "",
+    "bucketNameAlt1": "",
+    "s3EndpointAlt1": "",
+    "endpointAlt1": "",
+    "syncUrlAlt2": "",
+    "bucketNameAlt2": "",
+    "s3EndpointAlt2": "",
+    "endpointAlt2": "",
+    "prices": {
+        "1_DAY": 399,
+        "30_DAYS": 1999,
+        "PERMANENT": 14999
+    },
+    "emailServer": {
+        "service": "gmail",
+        "user": "rockolasmexicali@gmail.com",
+        "pass": "tyfe nafw orbb dorl",
+        "fromName": "Soporte Tecnobanda"
+    },
+    "referralMeta": 2
+}
