@@ -222,7 +222,9 @@ async function init() {
         const email = document.getElementById('login-email').value.trim();
         const otp = document.getElementById('login-otp').value.trim();
         const deviceId = localStorage.getItem('tecnobanda_device_id');
-        const referralCode = document.getElementById('reg-referral') ? document.getElementById('reg-referral').value.trim() : null;
+        const refPre = document.getElementById('reg-referral-prefix')?.value.trim();
+        const refSuf = document.getElementById('reg-referral-suffix')?.value.trim();
+        const referralCode = (refPre && refSuf) ? `${refPre}-${refSuf}` : (refPre || refSuf || null);
 
         if (!otp) return alert("Ingresa la clave de 6 dígitos");
 
@@ -254,7 +256,9 @@ async function init() {
                 const userName = document.getElementById('reg-username').value.trim();
                 const userEmail = document.getElementById('reg-email').value.trim();
                 const userPhone = document.getElementById('reg-phone').value.trim();
-                const referralCode = document.getElementById('reg-referral').value.trim();
+                const refPre = document.getElementById('reg-referral-prefix')?.value.trim();
+                const refSuf = document.getElementById('reg-referral-suffix')?.value.trim();
+                const referralCode = (refPre && refSuf) ? `${refPre}-${refSuf}` : (refPre || refSuf || null);
                 const deviceId = localStorage.getItem('tecnobanda_device_id');
 
                 console.log(`[Frontend] Intentando registrar: ${userEmail} (ID: ${deviceId})`);

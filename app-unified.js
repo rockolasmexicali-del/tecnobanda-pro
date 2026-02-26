@@ -124,15 +124,15 @@ app.post('/api/auth/verify-otp', (req, res) => {
                     const phone = existing?.phone || '';
                     const myCode = (name || 'USR').toUpperCase().replace(/[^A-Z0-9]/g, '').substring(0, 5) + "-" + Math.floor(1000 + Math.random() * 9000);
 
-                    // VALIDACIÓN DE CÓDIGO DE REFERIDO
                     if (referralCode && referralCode.trim() !== "") {
-                        db.get("SELECT id FROM users WHERE UPPER(referral_code) = UPPER(?) LIMIT 1", [referralCode.trim()], (err, padrino) => {
+                        const cleanRefCode = referralCode.trim().replace(/\s/g, '');
+                        db.get("SELECT id FROM users WHERE REPLACE(UPPER(referral_code), ' ', '') = REPLACE(UPPER(?), ' ', '') LIMIT 1", [cleanRefCode], (err, padrino) => {
                             if (err) return res.status(500).json({ error: err.message });
                             if (!padrino) {
-                                console.log(`[OTP-Reg] ❌ Código de referido inválido: ${referralCode}`);
+                                console.log(`[OTP-Reg] ❌ Código de referido inválido: ${cleanRefCode}`);
                                 return res.status(400).json({ error: "El código de referido no es válido. Verifica que esté bien escrito." });
                             }
-                            proceedWithOtpReg(referralCode.trim());
+                            proceedWithOtpReg(cleanRefCode);
                         });
                     } else {
                         proceedWithOtpReg(null);
@@ -164,14 +164,15 @@ app.post('/api/register', (req, res) => {
 
         // VALIDACIÓN DE CÓDIGO DE REFERIDO
         if (referralCode && referralCode.trim() !== "") {
-            db.get("SELECT id FROM users WHERE UPPER(referral_code) = UPPER(?) LIMIT 1", [referralCode.trim()], (err, padrino) => {
+            const cleanRefCode = referralCode.trim().replace(/\s/g, '');
+            db.get("SELECT id FROM users WHERE REPLACE(UPPER(referral_code), ' ', '') = REPLACE(UPPER(?), ' ', '') LIMIT 1", [cleanRefCode], (err, padrino) => {
                 if (err) return res.status(500).json({ error: err.message });
                 if (!padrino) {
-                    console.log(`[Registro] ❌ Código de referido inválido: ${referralCode}`);
+                    console.log(`[Registro] ❌ Código de referido inválido: ${cleanRefCode}`);
                     return res.status(400).json({ error: "El código de referido no es válido. Verifica que esté bien escrito." });
                 }
                 // Si existe, procedemos
-                proceedWithReg(referralCode.trim());
+                proceedWithReg(cleanRefCode);
             });
         } else {
             proceedWithReg(null);

@@ -307,9 +307,17 @@
                 </div>
                 <div class="setting-group">
                     <label class="reg-label">¿Tienes un código de amigo? (Opcional)</label>
-                    <input type="text" id="reg-referral" placeholder="CÓDIGO-1234" class="reg-input"
-                        style="text-transform: uppercase;">
+                    <div style="display: flex; gap: 8px; align-items: center;">
+                        <input type="text" id="reg-referral-prefix" placeholder="CÓDIGO" class="reg-input"
+                            style="text-transform: uppercase; margin-bottom: 0; flex: 1; text-align: center;"
+                            maxlength="10">
+                        <span style="color: var(--primary); font-weight: 800; font-size: 1.2rem;">-</span>
+                        <input type="text" id="reg-referral-suffix" placeholder="1234" class="reg-input"
+                            style="text-transform: uppercase; margin-bottom: 0; width: 100px; text-align: center;"
+                            maxlength="6">
+                    </div>
                 </div>
+
                 <button type="submit" class="cta-button primary-style">
                     <i class="fa-solid fa-user-plus"></i> Crear Cuenta
                 </button>
