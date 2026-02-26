@@ -9,7 +9,7 @@ const fetch = require('node-fetch');
 const db = require('./database');
 const multer = require('multer');
 
-const SERVER_VERSION = "4.9.0 (Admin Super-Power)";
+const SERVER_VERSION = "5.0.0 (Clean Refresh)";
 const PORT = process.env.PORT || 3000;
 const otpStore = new Map();
 
@@ -60,8 +60,6 @@ function saveConfig(config) {
 function getMailTransporter() {
     const config = getConfig();
     const mail = config.emailServer || {};
-
-    // Prioridad a variables de entorno para evitar que se borren al actualizar en GitHub
     const user = process.env.SMTP_USER || mail.user;
     const pass = process.env.SMTP_PASS || mail.pass;
     const service = process.env.SMTP_SERVICE || mail.service || 'gmail';
@@ -88,141 +86,112 @@ db.run("CREATE TABLE IF NOT EXISTS activations (id INTEGER PRIMARY KEY AUTOINCRE
 app.get('/api/health', (req, res) => res.json({ status: "alive", version: SERVER_VERSION, uptime: Math.floor(process.uptime()) }));
 app.get('/api/config', (req, res) => res.json(getConfig()));
 
-// --- AUTH & PING ---
+// --- AUTH: REQUEST OTP ---
 app.post('/api/auth/request-otp', (req, res) => {
     const { email } = req.body;
     if (!email) return res.status(400).json({ error: "Email requerido" });
     const cleanEmail = email.toLowerCase().trim();
-    console.log(`[OTP] Solicitando para: ${cleanEmail}`);
-    db.get("SELECT * FROM users WHERE TRIM(LOWER(email)) = TRIM(?)", [cleanEmail], async (err, user) => {
-        if (!user) {
-            console.log(`[OTP] ❌ No encontrado: ${cleanEmail}`);
-            return res.status(404).json({ error: "Registro no encontrado con ese correo" });
-        }
+
+    db.get("SELECT * FROM users WHERE LOWER(email) = ?", [cleanEmail], async (err, user) => {
+        if (!user) return res.status(404).json({ error: "No existe cuenta con este correo" });
+
         const otp = Math.floor(100000 + Math.random() * 900000).toString();
         otpStore.set(cleanEmail, { otp, expires: Date.now() + 300000 });
+
         const transporter = getMailTransporter();
         if (transporter) {
             try {
+                const config = getConfig();
+                const fromName = config.emailServer?.fromName || "TecnoBanda Support";
+                const fromEmail = config.emailServer?.user || "soporte@tecnobanda.com";
+
                 await transporter.sendMail({
-                    from: `"TecnoBanda Support" <${getConfig().emailServer.user}>`,
+                    from: `"${fromName}" <${fromEmail}>`,
                     to: cleanEmail,
-                    subject: 'Tu Clave de Acceso',
+                    subject: `${otp} es tu clave de acceso`,
                     html: `<h1>Clave: ${otp}</h1><p>Válida por 5 minutos.</p>`
                 });
                 res.json({ success: true });
             } catch (e) {
                 console.error("❌ ERROR SMTP:", e);
-                res.status(500).json({ error: "Error SMTP (revisa configuración en Admin)" });
+                res.status(500).json({ error: "Error de correo. Verifica la clave SMTP." });
             }
         } else {
-            console.log(`[SIMULATED-OTP] Email: ${cleanEmail} -> Code: ${otp}`);
+            console.log(`[DEV-MODE] OTP for ${cleanEmail}: ${otp}`);
             res.json({ success: true, simulated: true });
         }
     });
 });
 
+// --- AUTH: VERIFY OTP & LOGIN / REGISTER ---
 app.post('/api/auth/verify-otp', (req, res) => {
     const { email, otp, deviceId, referralCode } = req.body;
     const cleanEmail = email?.toLowerCase().trim();
     const stored = otpStore.get(cleanEmail);
+
     if (stored && stored.otp === otp && stored.expires > Date.now()) {
         otpStore.delete(cleanEmail);
-        db.get("SELECT * FROM users WHERE TRIM(LOWER(email)) = TRIM(?) AND device_id = ?", [cleanEmail, deviceId], (err, user) => {
+
+        db.get("SELECT * FROM users WHERE LOWER(email) = ?", [cleanEmail], (err, user) => {
             if (user) {
+                // USUARIO EXISTE: Actualizar dispositivo y entrar
+                db.run("UPDATE users SET device_id = ?, last_seen = CURRENT_TIMESTAMP WHERE id = ?", [deviceId, user.id]);
                 res.json({ success: true, user: { name: user.name, email: user.email, phone: user.phone, referralCode: user.referral_code } });
             } else {
-                db.get("SELECT * FROM users WHERE TRIM(LOWER(email)) = TRIM(?) LIMIT 1", [cleanEmail], (err, existing) => {
-                    const name = existing?.name || 'Usuario';
-                    const phone = existing?.phone || '';
-                    const myCode = (name || 'USR').toUpperCase().replace(/[^A-Z0-9]/g, '').substring(0, 5) + "-" + Math.floor(1000 + Math.random() * 9000);
-
-                    if (referralCode && referralCode.trim() !== "") {
-                        const cleanRefCode = referralCode.trim().replace(/[\s-]/g, '');
-                        db.get("SELECT id FROM users WHERE REPLACE(REPLACE(UPPER(referral_code), ' ', ''), '-', '') = UPPER(?) LIMIT 1", [cleanRefCode], (err, padrino) => {
-                            if (err) return res.status(500).json({ error: err.message });
-                            if (!padrino) {
-                                console.log(`[OTP-Reg] ❌ Código de referido inválido: ${cleanRefCode}`);
-                                return res.status(400).json({ error: "El código de referido no es válido. Verifica que esté bien escrito." });
-                            }
-                            proceedWithOtpReg(cleanRefCode);
-                        });
-                    } else {
-                        proceedWithOtpReg(null);
-                    }
-
-                    function proceedWithOtpReg(finalRefCode) {
-                        if (existing) {
-                            // SI YA EXISTE EL CORREO, SOLO ACTUALIZAMOS EL DEVICE_ID (Migración de dispositivo)
-                            db.run("UPDATE users SET device_id = ?, last_seen = CURRENT_TIMESTAMP WHERE id = ?", [deviceId, existing.id], function (err) {
-                                if (err) return res.status(500).json({ error: err.message });
-                                io.emit('update_users');
-                                res.json({ success: true, user: { name: existing.name, email: existing.email, phone: existing.phone, referralCode: existing.referral_code } });
-                            });
-                        } else {
-                            // SI ES TOTALMENTE NUEVO, INSERTAMOS
-                            db.run("INSERT INTO users (name, email, phone, device_id, last_seen, referral_code, referred_by) VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, ?, ?)",
-                                [name, cleanEmail, phone, deviceId, myCode, finalRefCode], function (err) {
-                                    if (err) return res.status(500).json({ error: err.message });
-                                    io.emit('update_users');
-                                    res.json({ success: true, user: { name, email: cleanEmail, phone, referralCode: myCode } });
-                                });
-                        }
-                    }
-                });
+                // USUARIO NUEVO (Vía OTP): Validar referido si existe
+                handleNewUserRegistration(null, cleanEmail, '', deviceId, referralCode, res);
             }
-
         });
-    } else res.status(401).json({ error: "Clave inválida o expirada" });
+    } else {
+        res.status(401).json({ error: "Clave inválida o expirada" });
+    }
 });
 
+// --- AUTH: DIRECT REGISTER ---
 app.post('/api/register', (req, res) => {
     const { name, email, phone, deviceId, referralCode } = req.body;
     const cleanEmail = email?.toLowerCase().trim();
 
-    db.get("SELECT * FROM users WHERE LOWER(email) = ? LIMIT 1", [cleanEmail], (err, exists) => {
-        if (exists) return res.status(409).json({ error: "Este correo ya está registrado" });
-
-        const myCode = (name || 'USR').toUpperCase().replace(/[^A-Z0-9]/g, '').substring(0, 5) + "-" + Math.floor(1000 + Math.random() * 9000);
-
-        // VALIDACIÓN DE CÓDIGO DE REFERIDO
-        if (referralCode && referralCode.trim() !== "") {
-            const cleanRefCode = referralCode.trim().replace(/[\s-]/g, '');
-            db.get("SELECT id FROM users WHERE REPLACE(REPLACE(UPPER(referral_code), ' ', ''), '-', '') = UPPER(?) LIMIT 1", [cleanRefCode], (err, padrino) => {
-                if (err) return res.status(500).json({ error: err.message });
-                if (!padrino) {
-                    console.log(`[Registro] ❌ Código de referido inválido: ${cleanRefCode}`);
-                    return res.status(400).json({ error: "El código de referido no es válido. Verifica que esté bien escrito." });
-                }
-                // Si existe, procedemos
-                proceedWithReg(cleanRefCode);
-            });
-        } else {
-            proceedWithReg(null);
-        }
-
-        function proceedWithReg(finalRefCode) {
-            db.run("INSERT INTO users (name, email, phone, device_id, last_seen, referral_code, referred_by) VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, ?, ?)",
-                [name, cleanEmail, phone, deviceId, myCode, finalRefCode], function (err) {
-                    if (err) return res.status(500).json({ error: err.message });
-                    io.emit('update_users');
-                    res.json({ success: true, user: { name, email: cleanEmail, phone, referralCode: myCode } });
-                });
-        }
+    db.get("SELECT id FROM users WHERE LOWER(email) = ?", [cleanEmail], (err, user) => {
+        if (user) return res.status(409).json({ error: "Este correo ya está registrado" });
+        handleNewUserRegistration(name, cleanEmail, phone, deviceId, referralCode, res);
     });
 });
 
+// Función compartida para registrar nuevos usuarios
+function handleNewUserRegistration(name, email, phone, deviceId, referralCode, res) {
+    const finalName = name || 'Usuario';
+    const myCode = (finalName || 'USR').toUpperCase().replace(/[^A-Z0-9]/g, '').substring(0, 5) + "-" + Math.floor(1000 + Math.random() * 9000);
 
+    const proceed = (refBy) => {
+        db.run("INSERT INTO users (name, email, phone, device_id, last_seen, referral_code, referred_by) VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, ?, ?)",
+            [finalName, email, phone, deviceId, myCode, refBy], function (err) {
+                if (err) return res.status(500).json({ error: err.message });
+                io.emit('update_users');
+                res.json({ success: true, user: { name: finalName, email, phone, referralCode: myCode } });
+            });
+    };
+
+    if (referralCode && referralCode.trim() !== "") {
+        const cleanRef = referralCode.trim().toUpperCase();
+        db.get("SELECT id FROM users WHERE UPPER(referral_code) = ?", [cleanRef], (err, row) => {
+            if (!row) return res.status(400).json({ error: "El código de referido no es válido" });
+            proceed(cleanRef);
+        });
+    } else {
+        proceed(null);
+    }
+}
+
+// --- CORE FUNCTIONALITY ---
 app.post('/api/ping', (req, res) => {
     const { deviceId, email, name } = req.body;
     if (!email || !deviceId) return res.json({ status: "logout" });
     const cleanEmail = email.toLowerCase().trim();
-    db.get("SELECT * FROM users WHERE TRIM(LOWER(email)) = TRIM(?) AND device_id = ?", [cleanEmail, deviceId], (err, row) => {
-        if (!row) {
-            db.run("INSERT OR IGNORE INTO users (name, email, device_id, last_seen) VALUES (?, ?, ?, CURRENT_TIMESTAMP)", [name || 'Usuario', cleanEmail, deviceId]);
-            io.emit('update_users');
-        } else db.run("UPDATE users SET last_seen = CURRENT_TIMESTAMP WHERE id = ?", [row.id]);
-        db.get("SELECT * FROM licenses WHERE TRIM(LOWER(user_email)) = TRIM(?) AND original_device_id = ? AND status='USED' AND (expires_at IS NULL OR expires_at > CURRENT_TIMESTAMP) ORDER BY expires_at DESC LIMIT 1",
+    db.get("SELECT * FROM users WHERE LOWER(email) = ? AND device_id = ?", [cleanEmail, deviceId], (err, row) => {
+        if (!row) return res.json({ status: "logout" });
+        db.run("UPDATE users SET last_seen = CURRENT_TIMESTAMP WHERE id = ?", [row.id]);
+        db.get("SELECT * FROM licenses WHERE LOWER(user_email) = ? AND original_device_id = ? AND status='USED' AND (expires_at IS NULL OR expires_at > CURRENT_TIMESTAMP) ORDER BY expires_at DESC LIMIT 1",
             [cleanEmail, deviceId], (err, lic) => {
                 res.json({ status: lic ? "active" : "inactive", type: lic?.type, expiresAt: lic?.expires_at });
             });
@@ -248,37 +217,6 @@ app.post('/api/activate', (req, res) => {
     });
 });
 
-// --- USER PROFILE & PLAYLISTS ---
-app.patch('/api/users/profile', (req, res) => {
-    const { email, deviceId, name, phone } = req.body;
-    db.run("UPDATE users SET name = ?, phone = ?, last_seen = CURRENT_TIMESTAMP WHERE LOWER(email) = ? AND device_id = ?",
-        [name, phone, email.toLowerCase(), deviceId], function (err) {
-            io.emit('update_users');
-            res.json({ success: !err });
-        });
-});
-
-app.get('/api/playlists', (req, res) => {
-    db.all("SELECT * FROM playlists WHERE LOWER(user_email) = ?", [req.query.email?.toLowerCase()], (err, rows) => {
-        res.json(rows.map(r => ({ ...r, songs: r.songs ? JSON.parse(r.songs) : [] })));
-    });
-});
-
-app.post('/api/playlists', (req, res) => {
-    const { email, name } = req.body;
-    db.run("INSERT INTO playlists (user_email, name, songs) VALUES (?, ?, '[]')", [email.toLowerCase(), name], function (err) {
-        res.json({ id: this.lastID, name: name, songs: [] });
-    });
-});
-
-app.patch('/api/playlists/:id', (req, res) => {
-    const { id } = req.params;
-    const { name, songs } = req.body;
-    if (name !== undefined) db.run("UPDATE playlists SET name = ? WHERE id = ?", [name, id]);
-    if (songs !== undefined) db.run("UPDATE playlists SET songs = ? WHERE id = ?", [JSON.stringify(songs), id]);
-    res.json({ success: true });
-});
-
 // --- ADMIN API ---
 app.get('/api/admin/config', (req, res) => res.json(getConfig()));
 app.post('/api/admin/config', (req, res) => {
@@ -289,131 +227,13 @@ app.post('/api/admin/config', (req, res) => {
 });
 
 app.get('/api/admin/users', (req, res) => {
-    const sql = `SELECT u.*, 
-        l.type as license_type, l.expires_at, l.original_device_id as license_device_id,
-        (SELECT COUNT(*) FROM users sub WHERE sub.referred_by = u.referral_code) as referral_count
-        FROM users u 
-        LEFT JOIN licenses l ON LOWER(u.email) = LOWER(l.user_email) AND u.device_id = l.original_device_id AND l.status='USED' 
-        ORDER BY u.last_seen DESC`;
-    db.all(sql, (err, rows) => res.json(rows || []));
-});
-
-app.patch('/api/admin/users/:id', (req, res) => {
-    const { name, email, phone } = req.body;
-    db.run("UPDATE users SET name = ?, email = ?, phone = ? WHERE id = ?", [name, email, phone, req.params.id], function (err) {
-        if (err) return res.status(500).json({ error: err.message });
-        logActivity('Admin-Edit-User', `User ID ${req.params.id} updated`);
-        io.emit('update_users');
-        res.json({ success: true });
-    });
-});
-
-app.delete('/api/admin/users/:id', (req, res) => {
-    db.run("DELETE FROM users WHERE id = ?", [req.params.id], function (err) {
-        if (err) return res.status(500).json({ error: err.message });
-        logActivity('Admin-Delete-User', `User ID ${req.params.id} removed`);
-        io.emit('update_users');
-        res.json({ success: true });
-    });
-});
-
-app.get('/api/admin/stats', (req, res) => {
-    db.get(`SELECT 
-        (SELECT COUNT(*) FROM users) as totalUsers,
-        (SELECT COUNT(*) FROM licenses WHERE status='USED' AND (expires_at IS NULL OR expires_at > DATETIME('now'))) as activeLicenses,
-        (SELECT SUM(price_paid) FROM activations WHERE activated_at >= DATE('now')) as todayIncome,
-        (SELECT SUM(price_paid) FROM activations) as totalIncome
-    `, (e, row) => {
-        res.json({
-            totalUsers: row?.totalUsers || 0,
-            activeLicenses: row?.activeLicenses || 0,
-            todayIncome: row?.todayIncome || 0,
-            totalIncome: row?.totalIncome || 0
-        });
-    });
-});
-
-app.get('/api/admin/user-stats', (req, res) => {
-    // Para el gráfico de usuarios
-    const sql = "SELECT strftime('%Y-%m', last_seen) as label, COUNT(*) as value FROM users GROUP BY label ORDER BY label DESC LIMIT 12";
-    db.all(sql, (err, rows) => res.json(rows || []));
-});
-
-app.get('/api/admin/active-licenses', (req, res) => {
-    db.all("SELECT * FROM licenses ORDER BY status DESC, created_at DESC", (err, rows) => res.json(rows || []));
-});
-
-app.post('/api/admin/generate', (req, res) => {
-    const { type, count } = req.body;
-    const prefix = type === '1_DAY' ? 'TB-DIA-' : (type === '30_DAYS' ? 'TB-MES-' : 'TB-PERM-');
-    const keys = [];
-    for (let i = 0; i < (count || 1); i++) {
-        const key = prefix + Math.random().toString(36).substr(2, 6).toUpperCase() + "-" + Math.random().toString(36).substr(2, 6).toUpperCase();
-        db.run("INSERT INTO licenses (key, type, status) VALUES (?, ?, 'UNUSED')", [key, type]);
-        keys.push(key);
-    }
-    logActivity('Admin-Generate-Keys', `Generated ${count} keys of type ${type}`);
-    io.emit('update_licenses');
-    res.json({ success: true, keys });
-});
-
-app.delete('/api/admin/licenses/:key', (req, res) => {
-    db.run("DELETE FROM licenses WHERE key = ?", [req.params.key], function (err) {
-        logActivity('Admin-Delete-License', `Key ${req.params.key} removed`);
-        io.emit('update_licenses');
-        res.json({ success: true });
-    });
-});
-
-app.delete('/api/admin/licenses-all/unused', (req, res) => {
-    db.run("DELETE FROM licenses WHERE status = 'UNUSED'", function (err) {
-        logActivity('Admin-Clear-Licenses', `All unused keys removed`);
-        io.emit('update_licenses');
-        res.json({ success: true, deleted: this.changes });
-    });
-});
-
-app.post('/api/admin/licenses/revoke', (req, res) => {
-    const { deviceId } = req.body;
-    db.run("UPDATE licenses SET status = 'REVOKED' WHERE original_device_id = ? AND status = 'USED'", [deviceId], function (err) {
-        logActivity('Admin-Revoke-License', `Revoked access for device ${deviceId}`);
-        io.emit('update_licenses');
-        io.emit('update_users');
-        res.json({ success: true });
-    });
+    db.all("SELECT * FROM users ORDER BY last_seen DESC", (err, rows) => res.json(rows || []));
 });
 
 app.get('/api/admin/audios/:type', (req, res) => {
     const dir = path.join(UPLOADS_DIR, req.params.type);
     if (!fs.existsSync(dir)) return res.json([]);
-    res.json(fs.readdirSync(dir)
-        .filter(f => f.endsWith('.mp3') || f.endsWith('.wav'))
-        .map(f => ({ name: f, url: `/uploads/${req.params.type}/${f}` }))
-    );
-});
-
-app.post('/api/admin/audios/:type', uploadAudio.single('audio'), (req, res) => {
-    if (!req.file) return res.status(400).json({ error: "No file" });
-    logActivity('Admin-Upload-Audio', `File ${req.file.originalname} uploaded to ${req.params.type}`);
-    res.json({ success: true, file: req.file.originalname });
-});
-
-app.delete('/api/admin/audios/:type/:filename', (req, res) => {
-    const filePath = path.join(UPLOADS_DIR, req.params.type, req.params.filename);
-    if (fs.existsSync(filePath)) {
-        fs.unlinkSync(filePath);
-        logActivity('Admin-Delete-Audio', `Removed ${req.params.filename} from ${req.params.type}`);
-        res.json({ success: true });
-    } else res.status(404).json({ error: "No existe" });
-});
-
-app.get('/api/admin/income', (req, res) => {
-    const sql = "SELECT a.*, u.name as user_name, l.type as license_type FROM activations a LEFT JOIN licenses l ON a.license_key = l.key LEFT JOIN users u ON LOWER(l.user_email) = LOWER(u.email) AND a.device_id = u.device_id ORDER BY a.activated_at DESC";
-    db.all(sql, (err, rows) => res.json({ logs: rows || [] }));
-});
-
-app.get('/api/admin/audit-logs', (req, res) => {
-    db.all("SELECT * FROM audit_logs ORDER BY created_at DESC LIMIT 100", (err, rows) => res.json(rows || []));
+    res.json(fs.readdirSync(dir).filter(f => f.endsWith('.mp3') || f.endsWith('.wav')).map(f => ({ name: f, url: `/uploads/${req.params.type}/${f}` })));
 });
 
 app.get('/api/admin/music-library', (req, res) => {
@@ -421,47 +241,15 @@ app.get('/api/admin/music-library', (req, res) => {
     else res.json([]);
 });
 
-app.get('/api/proxy-sync', async (req, res) => {
-    try { const r = await fetch(req.query.url); res.json(await r.json()); } catch (e) {
-        if (fs.existsSync(MUSICA_JSON_PATH)) res.json(JSON.parse(fs.readFileSync(MUSICA_JSON_PATH, 'utf8')));
-        else res.status(500).json({ error: "Offline" });
-    }
-});
-
 app.get('*', (req, res, next) => {
     if (req.url.startsWith('/api') || req.url.startsWith('/uploads')) return next();
     res.sendFile(path.join(__dirname, 'index.html'));
 });
 
-// --- SOCKETS: VIGILANTE & BROADCAST ---
+// --- SOCKETS ---
 io.on('connection', (socket) => {
     socket.on('join_admin', () => socket.join('admin_room'));
     socket.on('join_user', (email) => socket.join(email.toLowerCase().trim()));
-
-    // El Vigilante o el Admin emiten estos eventos al servidor, y el servidor los retransmite a todos
-    socket.on('admin_message', (data) => {
-        if (data.target === 'ALL') io.emit('admin_message', data);
-        else io.to(data.target.toLowerCase().trim()).emit('admin_message', data);
-    });
-
-    socket.on('song_added', (song) => {
-        console.log(`✨ Vigilante: Nueva canción -> ${song.title}`);
-        io.emit('song_added', song);
-    });
-
-    socket.on('song_deleted', (song) => {
-        console.log(`🗑️ Vigilante: Canción borrada -> ${song.title}`);
-        io.emit('song_deleted', song);
-    });
-
-    socket.on('database_updated', (newDb) => {
-        console.log(`🔄 Vigilante: Base de Datos Sincronizada (${newDb.length} canciones)`);
-        io.emit('database_updated', newDb);
-    });
-
-    socket.on('new_gift', (data) => {
-        io.to(data.email.toLowerCase().trim()).emit('new_gift', data);
-    });
 });
 
-server.listen(PORT, '0.0.0.0', () => { console.log(`✅ ULTIMATE SERVER ${SERVER_VERSION} LIVE ON PORT ${PORT}`); });
+server.listen(PORT, '0.0.0.0', () => { console.log(`✅ DISCO-SERVER LIVE ON PORT ${PORT}`); });
