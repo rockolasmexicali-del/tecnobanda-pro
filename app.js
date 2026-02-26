@@ -1097,7 +1097,7 @@ function setupEvents() {
 
             try {
                 const apiHost = window.location.hostname;
-                const res = await fetch(`http://${apiHost}:4000/api/users/profile`, {
+                const res = await fetch(`/api/users/profile`, {
                     method: 'PATCH',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ email, deviceId, name: newName, phone: newPhone })
@@ -1151,7 +1151,7 @@ function setupEvents() {
             try {
                 const apiHost = window.location.hostname;
                 const email = localStorage.getItem('tecnobanda_email');
-                const res = await fetch(`http://${apiHost}:4000/api/activate`, {
+                const res = await fetch(`/api/activate`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ key: code, deviceId, email })
@@ -1535,7 +1535,7 @@ window.handleListDrop = async (e, listIdx) => {
 
         try {
             const apiHost = window.location.hostname;
-            const res = await fetch(`http://${apiHost}:4000/api/playlists/${playlist.id}`, {
+            const res = await fetch(`/api/playlists/${playlist.id}`, {
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ songs: updatedSongs })
@@ -1896,7 +1896,7 @@ async function refreshLicenseUI() {
         const res = await fetch(`/api/ping`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ deviceId, email })
+            body: JSON.stringify({ deviceId, email, name: savedUser })
         });
 
         if (res.status === 404 || res.status === 401) {
