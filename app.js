@@ -276,15 +276,16 @@ async function init() {
                             if (data.user && data.user.referralCode) localStorage.setItem('tecnobanda_my_referral', data.user.referralCode);
                             window.saveUserDataAndReload({ name: userName, email: userEmail, phone: userPhone });
                         } else if (res.status === 409) {
-                            const data = await res.json();
-                            alert(data.error);
-                            // Redirigir automáticamente a la pantalla de login con el email ya escrito
+                            // SI EL USUARIO YA EXISTE, PASAR DIRECTO AL LOGIN POR OTP
                             document.getElementById('login-email').value = userEmail;
                             window.showEmailLogin();
+                            // Disparar el envío de OTP automáticamente para ahorrar un clic
+                            setTimeout(() => { window.requestOTP(); }, 500);
                         } else {
                             const data = await res.json().catch(() => ({}));
                             alert(data.error || "Error al conectar con el servidor de registro.");
                         }
+
                     } catch (err) {
                         alert("Error de conexión. Asegúrate que tienes internet.");
                         console.error(err);

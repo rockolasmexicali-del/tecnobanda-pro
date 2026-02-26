@@ -157,8 +157,8 @@ app.post('/api/register', (req, res) => {
     const { name, email, phone, deviceId, referralCode } = req.body;
     const cleanEmail = email?.toLowerCase().trim();
 
-    db.get("SELECT * FROM users WHERE LOWER(email) = ? AND device_id = ?", [cleanEmail, deviceId], (err, exists) => {
-        if (exists) return res.status(409).json({ error: "Este dispositivo ya está registrado" });
+    db.get("SELECT * FROM users WHERE LOWER(email) = ? LIMIT 1", [cleanEmail], (err, exists) => {
+        if (exists) return res.status(409).json({ error: "Este correo ya está registrado" });
 
         const myCode = (name || 'USR').toUpperCase().replace(/[^A-Z0-9]/g, '').substring(0, 5) + "-" + Math.floor(1000 + Math.random() * 9000);
 
