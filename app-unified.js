@@ -226,6 +226,9 @@ app.post('/api/activate', (req, res) => {
         else exp = new Date(2100, 0, 1).toISOString();
         db.run("UPDATE licenses SET status='USED', user_email=?, expires_at=?, original_device_id=? WHERE key=?",
             [email.toLowerCase(), exp, deviceId, key], () => {
+                // --- Lógica de Referidos ---
+                handleReferralPoint(email);
+
                 db.run("INSERT INTO activations (license_key, device_id, price_paid) VALUES (?, ?, ?)", [key, deviceId, 0]);
                 io.emit('update_licenses');
                 io.emit('update_income');
@@ -357,6 +360,44 @@ io.on('connection', (socket) => {
     socket.on('join_admin', () => socket.join('admin_room'));
     socket.on('join_user', (email) => socket.join(email.toLowerCase().trim()));
 });
+
+// --- REFERRALS LOGIC ---
+async function handleReferralPoint(userEmail) {
+    const cleanEmail = userEmail ? userEmail.trim().toLowerCase() : '';
+    db.get("SELECT id, referred_by FROM users WHERE LOWER(email) = ? AND referred_by IS NOT NULL AND referred_by != '' LIMIT 1", [cleanEmail], (err, user) => {
+        if (user && user.referred_by) {
+            const padrinoCode = user.referred_by.trim();
+            // Limpia vínculo para que solo dé 1 punto la primera vez
+            db.run("UPDATE users SET referred_by = NULL WHERE id = ?", [user.id], () => {
+                db.get("SELECT email, referral_points FROM users WHERE UPPER(referral_code) = UPPER(?) LIMIT 1", [padrinoCode], (err, padrino) => {
+                    if (padrino) {
+                        const padrinoEmail = padrino.email.trim().toLowerCase();
+                        const newPoints = (padrino.referral_points || 0) + 1;
+                        const config = getConfig();
+                        const meta = config.referralMeta || 5;
+
+                        if (newPoints >= meta) {
+                            generateGiftLicense(padrinoEmail);
+                            db.run("UPDATE users SET referral_points = 0, pending_gifts = pending_gifts + 1 WHERE LOWER(email) = ?", [padrinoEmail]);
+                        } else {
+                            db.run("UPDATE users SET referral_points = ? WHERE LOWER(email) = ?", [newPoints, padrinoEmail]);
+                        }
+                        io.emit('update_users');
+                    }
+                });
+            });
+        }
+    });
+}
+
+async function generateGiftLicense(email) {
+    const key = `GIFT-1D-${Math.random().toString(36).substr(2, 6).toUpperCase()}`;
+    db.run("INSERT INTO licenses (key, type, status) VALUES (?, '1_DAY', 'UNUSED')", [key], () => {
+        // Aquí podrías enviar email si quisieras, pero al menos la clave queda en la DB
+        console.log(`[Referidos] Regalo generado para ${email}: ${key}`);
+        io.to(email).emit('new_gift', { message: "¡Has ganado una licencia de regalo!" });
+    });
+}
 
 server.listen(PORT, '0.0.0.0', () => {
     console.log(`✅ DISCO-SERVER LIVE ON PORT ${PORT}`);
