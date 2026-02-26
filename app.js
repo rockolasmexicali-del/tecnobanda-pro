@@ -1584,8 +1584,7 @@ window.deletePlaylist = async (e, idx) => {
         confirmText: "Eliminar",
         onConfirm: async () => {
             try {
-                const apiHost = window.location.hostname;
-                const res = await fetch(`http://${apiHost}:4000/api/playlists/${p.id}`, { method: 'DELETE' });
+                const res = await fetch(`/api/playlists/${p.id}`, { method: 'DELETE' });
                 if (res.ok) {
                     state.userPlaylists.splice(idx, 1);
                     renderPlaylists();
@@ -1614,8 +1613,7 @@ window.createNewList = async () => {
             if (!email) return showToast("Debes iniciar sesión");
 
             try {
-                const apiHost = window.location.hostname;
-                const res = await fetch(`http://${apiHost}:4000/api/playlists`, {
+                const res = await fetch(`/api/playlists`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ email, name })
@@ -1721,8 +1719,7 @@ window.removeFromPlaylist = async (e, listIdx, songIdx) => {
     updatedSongs.splice(songIdx, 1);
 
     try {
-        const apiHost = window.location.hostname;
-        const res = await fetch(`http://${apiHost}:4000/api/playlists/${playlist.id}`, {
+        const res = await fetch(`/api/playlists/${playlist.id}`, {
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ songs: updatedSongs })
@@ -1894,10 +1891,9 @@ async function refreshLicenseUI() {
     if (!savedUser || !deviceId) return;
 
     try {
-        const apiHost = window.location.hostname;
         console.log(`[Ping] Verificando sesión para ${email}...`);
 
-        const res = await fetch(`http://${apiHost}:4000/api/ping`, {
+        const res = await fetch(`/api/ping`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ deviceId, email })
@@ -2006,17 +2002,17 @@ async function refreshAudioLists() {
 
     try {
         // Cargar Intros
-        const resIntros = await fetch(`http://${apiHost}:4000/api/admin/audios/intros`);
+        const resIntros = await fetch(`/api/admin/audios/intros`);
         const intros = await resIntros.json();
         if (ui.defaultIntroSelect) {
-            ui.defaultIntroSelect.innerHTML = intros.map(i => `<option value="http://${apiHost}:4000${i.url}">${i.name}</option>`).join('');
+            ui.defaultIntroSelect.innerHTML = intros.map(i => `<option value="${i.url}">${i.name}</option>`).join('');
 
             // Si hay una selección guardada, aplicarla
             if (state.settings.selectedIntro) {
                 ui.defaultIntroSelect.value = state.settings.selectedIntro;
                 loadAudioToBuffer(state.settings.selectedIntro, 'intro');
             } else if (intros.length > 0) {
-                const first = `http://${apiHost}:4000${intros[0].url}`;
+                const first = intros[0].url;
                 ui.defaultIntroSelect.value = first;
                 state.settings.selectedIntro = first;
                 loadAudioToBuffer(first, 'intro');
@@ -2024,17 +2020,17 @@ async function refreshAudioLists() {
         }
 
         // Cargar Ambientes
-        const resAmbient = await fetch(`http://${apiHost}:4000/api/admin/audios/ambient`);
+        const resAmbient = await fetch(`/api/admin/audios/ambient`);
         const ambients = await resAmbient.json();
         if (ui.defaultAmbientSelect) {
-            ui.defaultAmbientSelect.innerHTML = ambients.map(a => `<option value="http://${apiHost}:4000${a.url}">${a.name}</option>`).join('');
+            ui.defaultAmbientSelect.innerHTML = ambients.map(a => `<option value="${a.url}">${a.name}</option>`).join('');
 
             // Si hay una selección guardada, aplicarla
             if (state.settings.selectedAmbient) {
                 ui.defaultAmbientSelect.value = state.settings.selectedAmbient;
                 loadAudioToBuffer(state.settings.selectedAmbient, 'ambient');
             } else if (ambients.length > 0) {
-                const first = `http://${apiHost}:4000${ambients[0].url}`;
+                const first = ambients[0].url;
                 ui.defaultAmbientSelect.value = first;
                 state.settings.selectedAmbient = first;
                 loadAudioToBuffer(first, 'ambient');
@@ -2134,8 +2130,7 @@ async function checkForGifts() {
     if (!email) return;
 
     try {
-        const apiHost = window.location.hostname;
-        const res = await fetch(`http://${apiHost}:4000/api/users/gifts?email=${email}`);
+        const res = await fetch(`/api/users/gifts?email=${email}`);
         const data = await res.json();
 
         const giftEl = document.getElementById('floating-gift');
@@ -2159,8 +2154,7 @@ window.claimGift = async () => {
     if (!email) return;
 
     try {
-        const apiHost = window.location.hostname;
-        await fetch(`http://${apiHost}:4000/api/users/gifts/claim`, {
+        await fetch(`/api/users/gifts/claim`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ email })
@@ -2194,8 +2188,7 @@ window.fetchMyReferralCode = async () => {
         btn.disabled = true;
         btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Obteniendo...';
 
-        const apiHost = window.location.hostname;
-        const res = await fetch(`http://${apiHost}:4000/api/admin/users`);
+        const res = await fetch(`/api/admin/users`);
         const users = await res.json();
 
         // Buscamos al usuario actual entre todos (forma rápida con la API existente)
