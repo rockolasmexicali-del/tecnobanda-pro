@@ -368,4 +368,35 @@ app.get('*', (req, res, next) => {
     res.sendFile(path.join(__dirname, 'index.html'));
 });
 
+// --- SOCKETS: VIGILANTE & BROADCAST ---
+io.on('connection', (socket) => {
+    socket.on('join_admin', () => socket.join('admin_room'));
+    socket.on('join_user', (email) => socket.join(email.toLowerCase().trim()));
+
+    // El Vigilante o el Admin emiten estos eventos al servidor, y el servidor los retransmite a todos
+    socket.on('admin_message', (data) => {
+        if (data.target === 'ALL') io.emit('admin_message', data);
+        else io.to(data.target.toLowerCase().trim()).emit('admin_message', data);
+    });
+
+    socket.on('song_added', (song) => {
+        console.log(`✨ Vigilante: Nueva canción -> ${song.title}`);
+        io.emit('song_added', song);
+    });
+
+    socket.on('song_deleted', (song) => {
+        console.log(`🗑️ Vigilante: Canción borrada -> ${song.title}`);
+        io.emit('song_deleted', song);
+    });
+
+    socket.on('database_updated', (newDb) => {
+        console.log(`🔄 Vigilante: Base de Datos Sincronizada (${newDb.length} canciones)`);
+        io.emit('database_updated', newDb);
+    });
+
+    socket.on('new_gift', (data) => {
+        io.to(data.email.toLowerCase().trim()).emit('new_gift', data);
+    });
+});
+
 server.listen(PORT, '0.0.0.0', () => { console.log(`✅ ULTIMATE SERVER ${SERVER_VERSION} LIVE ON PORT ${PORT}`); });
