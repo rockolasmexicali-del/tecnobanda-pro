@@ -12,7 +12,7 @@ const { S3Client, PutObjectCommand, DeleteObjectCommand } = require("@aws-sdk/cl
 const chokidar = require('chokidar');
 
 // --- SERVER METADATA ---
-const SERVER_VERSION = "3.2.0 (Cloud Optimized)";
+const SERVER_VERSION = "3.3.0 (Cloud Optimized & Complete)";
 const START_TIME = new Date().toISOString();
 
 console.log(`\n=========================================`);
@@ -27,7 +27,6 @@ const io = socketIo(server, {
     cors: { origin: "*" }
 });
 
-// IMPORTANT: Render/Cloud platforms require listening on process.env.PORT
 const PORT = process.env.PORT || 3000;
 
 // --- ANTI-CRASH ---
@@ -44,7 +43,6 @@ const INTROS_DIR = path.join(UPLOADS_DIR, 'intros');
 const AMBIENT_DIR = path.join(UPLOADS_DIR, 'ambient');
 const MUSICA_JSON_PATH = path.join(__dirname, 'musica.json');
 
-// Ensure essential directories exist
 [UPLOADS_DIR, INTROS_DIR, AMBIENT_DIR].forEach(dir => {
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 });
@@ -54,25 +52,23 @@ function getConfig() {
         const configPath = path.join(__dirname, 'config.json');
         if (!fs.existsSync(configPath)) return {};
         const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
-
-        // Cloud Path Fix: If we are on Linux (Render), ignore Windows absolute paths
         if (process.platform === 'linux' && config.musicPath && config.musicPath.includes(':')) {
-            config.musicPath = 'musica'; // Default to local folder in cloud
+            config.musicPath = 'musica';
         }
         return config;
-    } catch (e) {
-        return {};
-    }
+    } catch (e) { return {}; }
 }
 
 function getMusicDir() {
     const config = getConfig();
     let mPath = config.musicPath || 'musica';
     if (!path.isAbsolute(mPath)) mPath = path.join(__dirname, mPath);
-    if (!fs.existsSync(mPath)) {
-        try { fs.mkdirSync(mPath, { recursive: true }); } catch (e) { }
-    }
+    if (!fs.existsSync(mPath)) try { fs.mkdirSync(mPath, { recursive: true }); } catch (e) { }
     return mPath;
+}
+
+function logActivity(action, details) {
+    db.run("INSERT INTO audit_logs (action, details) VALUES (?, ?)", [action, details]);
 }
 
 // --- MIDDLEWARES ---
@@ -80,23 +76,20 @@ app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Log requests for debugging Render
 app.use((req, res, next) => {
     console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
     next();
 });
 
-// Servir archivos estáticos
 app.use('/uploads', express.static(UPLOADS_DIR));
 app.use('/admin', express.static(path.join(__dirname, 'admin')));
-app.use(express.static(__dirname)); // Servir la App Principal (index.html, styles.css, etc)
+app.use(express.static(__dirname));
 
 // --- SOCKET LOGIC ---
 const otpStore = new Map();
 
 io.on('connection', (socket) => {
     console.log(`[Socket] 🔗 Conexión [${socket.id}]`);
-
     socket.on('join_user', (email) => {
         if (email) {
             const cleanEmail = email.trim().toLowerCase();
@@ -115,54 +108,73 @@ io.on('connection', (socket) => {
 
     socket.on('admin_message', (data) => {
         const { message, target } = data;
-        if (target === 'ALL') {
-            io.emit('admin_message', { message });
-        } else {
-            const room = target.trim().toLowerCase();
-            io.to(room).emit('admin_message', { message });
-        }
+        if (target === 'ALL') io.emit('admin_message', { message });
+        else io.to(target.trim().toLowerCase()).emit('admin_message', { message });
     });
 });
 
-// --- API ENDPOINTS ---
+// --- EMAIL TRANSPORTER ---
+function getMailTransporter() {
+    const config = getConfig();
+    if (config.emailServer && config.emailServer.user) {
+        return nodemailer.createTransport({
+            service: config.emailServer.service || 'gmail',
+            auth: { user: config.emailServer.user, pass: config.emailServer.pass },
+            tls: { rejectUnauthorized: false }
+        });
+    }
+    return null;
+}
 
-app.get('/api/health', (req, res) => {
-    res.json({ status: "alive", version: SERVER_VERSION, uptime: process.uptime() });
+// --- API ENDPOINTS (CORREGIDOS) ---
+
+// 1. Registro (Faltaba en la 3.2.0)
+app.post('/api/register', (req, res) => {
+    const { name, email, phone, deviceId, referralCode } = req.body;
+    const cleanEmail = email ? email.trim().toLowerCase() : '';
+    const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
+
+    db.get("SELECT * FROM users WHERE LOWER(TRIM(email)) = ? AND device_id = ?", [cleanEmail, deviceId], (err, row) => {
+        if (row) return res.status(409).json({ error: "Dispositivo ya registrado" });
+
+        const proceedWithReg = (finalRefCode) => {
+            const myCode = (name || 'USER').toUpperCase().replace(/[^A-Z0-9]/g, '').substring(0, 5) + "-" + Math.floor(1000 + Math.random() * 9000);
+            db.run("INSERT INTO users (name, email, phone, device_id, ip_address, last_seen, referral_code, referred_by) VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?, ?)",
+                [name, cleanEmail, phone, deviceId, ip, myCode, finalRefCode], function (err) {
+                    if (err) return res.status(500).json({ error: err.message });
+                    io.emit('update_users');
+                    res.json({ success: true, user: { name, email: cleanEmail, phone, referralCode: myCode } });
+                });
+        };
+
+        if (referralCode && referralCode.trim() !== "") {
+            db.get("SELECT id FROM users WHERE UPPER(referral_code) = UPPER(?) LIMIT 1", [referralCode.trim()], (err, padrino) => {
+                if (!padrino) return res.status(400).json({ error: "Código de referido inválido" });
+                proceedWithReg(referralCode.trim());
+            });
+        } else proceedWithReg(null);
+    });
 });
 
-app.get('/api/config', (req, res) => {
-    res.json(getConfig());
-});
-
+// 2. Auth OTP
 app.post('/api/auth/request-otp', async (req, res) => {
     const { email } = req.body;
-    if (!email) return res.status(400).json({ error: "Email requerido" });
-
     db.get("SELECT * FROM users WHERE email = ?", [email], async (err, user) => {
-        if (!user) return res.status(404).json({ error: "Usuario no registrado" });
-
+        if (!user) return res.status(404).json({ error: "Usuario no encontrado" });
         const otp = Math.floor(100000 + Math.random() * 900000).toString();
         otpStore.set(email, { otp, expires: Date.now() + 300000 });
-
-        const config = getConfig();
-        if (config.emailServer && config.emailServer.user) {
-            const transporter = nodemailer.createTransport({
-                service: config.emailServer.service || 'gmail',
-                auth: { user: config.emailServer.user, pass: config.emailServer.pass },
-                tls: { rejectUnauthorized: false }
-            });
+        const transporter = getMailTransporter();
+        if (transporter) {
             try {
                 await transporter.sendMail({
-                    from: `"${config.emailServer.fromName || 'TecnoBanda'}" <${config.emailServer.user}>`,
+                    from: `"TecnoBanda" <${getConfig().emailServer.user}>`,
                     to: email,
-                    subject: 'Tu Clave de Acceso - TecnoBanda',
-                    html: `<h1>${otp}</h1><p>Válida por 5 minutos.</p>`
+                    subject: 'Tu Clave de Acceso',
+                    html: `<h1>${otp}</h1>`
                 });
                 res.json({ success: true });
-            } catch (error) { res.status(500).json({ error: "Error de email" }); }
-        } else {
-            res.status(500).json({ error: "Email no configurado" });
-        }
+            } catch (e) { res.status(500).json({ error: "Error de email" }); }
+        } else res.status(500).json({ error: "Email no configurado" });
     });
 });
 
@@ -186,29 +198,75 @@ app.post('/api/auth/verify-otp', (req, res) => {
     } else res.status(401).json({ error: "Clave incorrecta" });
 });
 
+// 3. Ping & Licenses
 app.post('/api/ping', (req, res) => {
     const { deviceId, email } = req.body;
     if (!email || !deviceId) return res.json({ status: "logout" });
-    db.get("SELECT * FROM licenses WHERE user_email = ? AND original_device_id = ? AND status='USED'", [email.toLowerCase(), deviceId], (err, lic) => {
-        if (!lic) return res.json({ status: "inactive" });
-        res.json({ status: "active", type: lic.type, expiresAt: lic.expires_at });
+    db.get("SELECT * FROM licenses WHERE LOWER(user_email) = ? AND original_device_id = ? AND status='USED' AND (expires_at IS NULL OR expires_at > CURRENT_TIMESTAMP)",
+        [email.toLowerCase(), deviceId], (err, lic) => {
+            if (!lic) return res.json({ status: "inactive" });
+            res.json({ status: "active", type: lic.type, expiresAt: lic.expires_at });
+        });
+});
+
+app.post('/api/activate', (req, res) => {
+    const { key, deviceId, email } = req.body;
+    db.get("SELECT * FROM licenses WHERE key = ? AND status='UNUSED'", [key], (err, lic) => {
+        if (!lic) return res.status(400).json({ error: "Clave inválida" });
+        let exp = null; const now = new Date();
+        if (lic.type === '1_DAY') exp = new Date(now.getTime() + 86400000).toISOString();
+        else if (lic.type === '30_DAYS') exp = new Date(now.getTime() + 2592000000).toISOString();
+        else exp = new Date(2099, 0, 1).toISOString();
+
+        db.run("UPDATE licenses SET status='USED', user_email=?, expires_at=?, original_device_id=? WHERE key=?",
+            [email.toLowerCase(), exp, deviceId, key], () => {
+                io.emit('update_licenses');
+                res.json({ success: true, type: lic.type, expiresAt: exp });
+            });
     });
 });
 
-// Static Fallback for SPA
+// 4. Playlists
+app.get('/api/playlists', (req, res) => {
+    db.all("SELECT * FROM playlists WHERE user_email = ?", [req.query.email], (err, rows) => {
+        res.json(rows.map(r => ({ ...r, songs: JSON.parse(r.songs || '[]') })));
+    });
+});
+
+app.post('/api/playlists', (req, res) => {
+    const { email, name } = req.body;
+    db.run("INSERT INTO playlists (user_email, name, songs) VALUES (?, ?, '[]')", [email, name], function () {
+        res.json({ id: this.lastID, name, songs: [] });
+    });
+});
+
+// --- VIGILANTE & B2 SYNC ---
+async function updateManifest() {
+    try {
+        const mDir = getMusicDir();
+        if (!fs.existsSync(mDir)) return;
+        const config = getConfig();
+        const files = fs.readdirSync(mDir).filter(f => f.endsWith('.zip') || f.endsWith('.rar'));
+        const database = files.map(f => ({
+            title: f.replace('.zip', '').replace('.rar', ''),
+            artist: "Banda",
+            isCompressed: true,
+            archiveFile: `https://${config.endpoint}/file/${config.bucketName}/${encodeURIComponent(f).replace(/%20/g, '+')}`,
+            dateAdded: fs.statSync(path.join(mDir, f)).mtime.toISOString()
+        }));
+        fs.writeFileSync(MUSICA_JSON_PATH, JSON.stringify(database, null, 2));
+        io.emit('database_updated', database);
+    } catch (e) { }
+}
+
+app.get('/api/config', (req, res) => res.json(getConfig()));
+
 app.get('*', (req, res, next) => {
     if (req.url.startsWith('/api')) return next();
     res.sendFile(path.join(__dirname, 'index.html'));
 });
 
-// Start listening on 0.0.0.0 to ensure external availability in cloud
 server.listen(PORT, '0.0.0.0', () => {
-    console.log(`
-    =============================================
-    ✅ UNIFIED SERVER V3.2 (CLOUD)
-    =============================================
-    PORT: ${PORT}
-    URL : http://0.0.0.0:${PORT}
-    =============================================
-    `);
+    console.log(`✅ UNIFIED SERVER V3.3.0 ACTIVO EN PUERTO ${PORT}`);
+    updateManifest();
 });
