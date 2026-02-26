@@ -321,17 +321,44 @@ app.post('/api/users/gifts/claim', (req, res) => {
         if (!user || user.pending_gifts <= 0) return res.status(400).json({ error: "No tienes regalos pendientes para reclamar" });
 
         // Decrement pending_gifts and generate a new 1-day license
-        db.run("UPDATE users SET pending_gifts = pending_gifts - 1 WHERE LOWER(email) = ?", [cleanEmail], function (err) {
+        db.run("UPDATE users SET pending_gifts = pending_gifts - 1 WHERE LOWER(email) = ?", [cleanEmail], async function (err) {
             if (err) return res.status(500).json({ error: "Error al actualizar regalos pendientes" });
 
             const key = `GIFT-1D-${Math.random().toString(36).substr(2, 6).toUpperCase()}`;
-            db.run("INSERT INTO licenses (key, type, status) VALUES (?, '1_DAY', 'UNUSED')", [key], function (err) {
+            db.run("INSERT INTO licenses (key, type, status) VALUES (?, '1_DAY', 'UNUSED')", [key], async function (err) {
                 if (err) {
-                    console.error("Error generating gift license:", err);
-                    // Optionally, revert pending_gifts if license generation fails
                     db.run("UPDATE users SET pending_gifts = pending_gifts + 1 WHERE LOWER(email) = ?", [cleanEmail]);
                     return res.status(500).json({ error: "Error al generar la licencia de regalo" });
                 }
+
+                // --- Enviar Correo con el Regalo ---
+                const transporter = getMailTransporter();
+                if (transporter) {
+                    try {
+                        const config = getConfig();
+                        const fromName = config.emailServer?.fromName || "TecnoBanda Regalos";
+                        const fromEmail = config.emailServer?.user;
+                        await transporter.sendMail({
+                            from: `"${fromName}" <${fromEmail}>`,
+                            to: cleanEmail,
+                            subject: "¡Felicidades! Aquí tienes tu Licencia de Regalo 🎁",
+                            html: `
+                                <div style="font-family: sans-serif; padding: 20px; text-align: center;">
+                                    <h1 style="color: #FFD700;">¡Felicidades! 🎉</h1>
+                                    <p>Has ganado este regalo por referir amigos a TecnoBanda.</p>
+                                    <div style="background: #f4f4f4; padding: 15px; border-radius: 10px; margin: 20px 0;">
+                                        <p style="font-size: 0.9rem; color: #666; margin-bottom: 5px;">Tu código de activación:</p>
+                                        <h2 style="letter-spacing: 2px; color: #333; margin: 0;">${key}</h2>
+                                    </div>
+                                    <p>Este código te otorga <b>1 DÍA GRATIS</b> de acceso Premium.</p>
+                                    <p style="font-size: 0.8rem; color: #888;">Cópialo y actívalo desde el menú de la aplicación.</p>
+                                </div>
+                            `
+                        });
+                        console.log(`[Regalo] Email enviado con éxito a ${cleanEmail}`);
+                    } catch (e) { console.error("❌ ERROR SMTP REGALO:", e); }
+                }
+
                 io.emit('update_licenses');
                 io.to(cleanEmail).emit('new_gift', { message: "¡Has reclamado una licencia de regalo!", key: key });
                 res.json({ success: true, key: key });
@@ -417,9 +444,11 @@ async function handleReferralPoint(userEmail) {
                         const meta = config.referralMeta || 5;
 
                         if (newPoints >= meta) {
-                            generateGiftLicense(padrinoEmail);
-                            // Actualizamos TODOS los dispositivos del padrino
+                            // IMPORTANTE: Aquí solo marcamos el regalo pendiente.
+                            // No generamos la licencia aquí para evitar duplicados.
+                            // El usuario la generará al hacer clic en el regalo en su pantalla.
                             db.run("UPDATE users SET referral_points = 0, pending_gifts = pending_gifts + 1 WHERE LOWER(email) = ?", [padrinoEmail]);
+                            console.log(`[Referidos] Padrino ${padrinoEmail} llegó a la meta. Regalo disponible.`);
                         } else {
                             db.run("UPDATE users SET referral_points = ? WHERE LOWER(email) = ?", [newPoints, padrinoEmail]);
                         }
