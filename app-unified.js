@@ -87,8 +87,12 @@ app.post('/api/auth/request-otp', (req, res) => {
     const { email } = req.body;
     if (!email) return res.status(400).json({ error: "Email requerido" });
     const cleanEmail = email.toLowerCase().trim();
-    db.get("SELECT * FROM users WHERE LOWER(email) = ?", [cleanEmail], async (err, user) => {
-        if (!user) return res.status(404).json({ error: "Registro no encontrado con ese correo" });
+    console.log(`[OTP] Solicitando para: ${cleanEmail}`);
+    db.get("SELECT * FROM users WHERE TRIM(LOWER(email)) = TRIM(?)", [cleanEmail], async (err, user) => {
+        if (!user) {
+            console.log(`[OTP] ❌ No encontrado: ${cleanEmail}`);
+            return res.status(404).json({ error: "Registro no encontrado con ese correo" });
+        }
         const otp = Math.floor(100000 + Math.random() * 900000).toString();
         otpStore.set(cleanEmail, { otp, expires: Date.now() + 300000 });
         const transporter = getMailTransporter();
@@ -118,11 +122,11 @@ app.post('/api/auth/verify-otp', (req, res) => {
     const stored = otpStore.get(cleanEmail);
     if (stored && stored.otp === otp && stored.expires > Date.now()) {
         otpStore.delete(cleanEmail);
-        db.get("SELECT * FROM users WHERE LOWER(email) = ? AND device_id = ?", [cleanEmail, deviceId], (err, user) => {
+        db.get("SELECT * FROM users WHERE TRIM(LOWER(email)) = TRIM(?) AND device_id = ?", [cleanEmail, deviceId], (err, user) => {
             if (user) {
                 res.json({ success: true, user: { name: user.name, email: user.email, phone: user.phone, referralCode: user.referral_code } });
             } else {
-                db.get("SELECT * FROM users WHERE LOWER(email) = ? LIMIT 1", [cleanEmail], (err, existing) => {
+                db.get("SELECT * FROM users WHERE TRIM(LOWER(email)) = TRIM(?) LIMIT 1", [cleanEmail], (err, existing) => {
                     const name = existing?.name || 'Usuario';
                     const phone = existing?.phone || '';
                     const myCode = (name || 'USR').toUpperCase().replace(/[^A-Z0-9]/g, '').substring(0, 5) + "-" + Math.floor(1000 + Math.random() * 9000);
@@ -197,12 +201,12 @@ app.post('/api/ping', (req, res) => {
     const { deviceId, email, name } = req.body;
     if (!email || !deviceId) return res.json({ status: "logout" });
     const cleanEmail = email.toLowerCase().trim();
-    db.get("SELECT * FROM users WHERE LOWER(email) = ? AND device_id = ?", [cleanEmail, deviceId], (err, row) => {
+    db.get("SELECT * FROM users WHERE TRIM(LOWER(email)) = TRIM(?) AND device_id = ?", [cleanEmail, deviceId], (err, row) => {
         if (!row) {
             db.run("INSERT OR IGNORE INTO users (name, email, device_id, last_seen) VALUES (?, ?, ?, CURRENT_TIMESTAMP)", [name || 'Usuario', cleanEmail, deviceId]);
             io.emit('update_users');
         } else db.run("UPDATE users SET last_seen = CURRENT_TIMESTAMP WHERE id = ?", [row.id]);
-        db.get("SELECT * FROM licenses WHERE LOWER(user_email) = ? AND original_device_id = ? AND status='USED' AND (expires_at IS NULL OR expires_at > CURRENT_TIMESTAMP) ORDER BY expires_at DESC LIMIT 1",
+        db.get("SELECT * FROM licenses WHERE TRIM(LOWER(user_email)) = TRIM(?) AND original_device_id = ? AND status='USED' AND (expires_at IS NULL OR expires_at > CURRENT_TIMESTAMP) ORDER BY expires_at DESC LIMIT 1",
             [cleanEmail, deviceId], (err, lic) => {
                 res.json({ status: lic ? "active" : "inactive", type: lic?.type, expiresAt: lic?.expires_at });
             });
