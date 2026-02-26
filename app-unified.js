@@ -123,13 +123,32 @@ app.post('/api/auth/verify-otp', (req, res) => {
                     const name = existing?.name || 'Usuario';
                     const phone = existing?.phone || '';
                     const myCode = (name || 'USR').toUpperCase().replace(/[^A-Z0-9]/g, '').substring(0, 5) + "-" + Math.floor(1000 + Math.random() * 9000);
-                    db.run("INSERT INTO users (name, email, phone, device_id, last_seen, referral_code, referred_by) VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, ?, ?)",
-                        [name, cleanEmail, phone, deviceId, myCode, referralCode], () => {
-                            io.emit('update_users');
-                            res.json({ success: true, user: { name, email: cleanEmail, phone, referralCode: myCode } });
+
+                    // VALIDACIÓN DE CÓDIGO DE REFERIDO
+                    if (referralCode && referralCode.trim() !== "") {
+                        db.get("SELECT id FROM users WHERE UPPER(referral_code) = UPPER(?) LIMIT 1", [referralCode.trim()], (err, padrino) => {
+                            if (err) return res.status(500).json({ error: err.message });
+                            if (!padrino) {
+                                console.log(`[OTP-Reg] ❌ Código de referido inválido: ${referralCode}`);
+                                return res.status(400).json({ error: "El código de referido no es válido. Verifica que esté bien escrito." });
+                            }
+                            proceedWithOtpReg(referralCode.trim());
                         });
+                    } else {
+                        proceedWithOtpReg(null);
+                    }
+
+                    function proceedWithOtpReg(finalRefCode) {
+                        db.run("INSERT INTO users (name, email, phone, device_id, last_seen, referral_code, referred_by) VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, ?, ?)",
+                            [name, cleanEmail, phone, deviceId, myCode, finalRefCode], function (err) {
+                                if (err) return res.status(500).json({ error: err.message });
+                                io.emit('update_users');
+                                res.json({ success: true, user: { name, email: cleanEmail, phone, referralCode: myCode } });
+                            });
+                    }
                 });
             }
+
         });
     } else res.status(401).json({ error: "Clave inválida o expirada" });
 });
@@ -137,16 +156,38 @@ app.post('/api/auth/verify-otp', (req, res) => {
 app.post('/api/register', (req, res) => {
     const { name, email, phone, deviceId, referralCode } = req.body;
     const cleanEmail = email?.toLowerCase().trim();
+
     db.get("SELECT * FROM users WHERE LOWER(email) = ? AND device_id = ?", [cleanEmail, deviceId], (err, exists) => {
         if (exists) return res.status(409).json({ error: "Este dispositivo ya está registrado" });
+
         const myCode = (name || 'USR').toUpperCase().replace(/[^A-Z0-9]/g, '').substring(0, 5) + "-" + Math.floor(1000 + Math.random() * 9000);
-        db.run("INSERT INTO users (name, email, phone, device_id, last_seen, referral_code, referred_by) VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, ?, ?)",
-            [name, cleanEmail, phone, deviceId, myCode, referralCode], () => {
-                io.emit('update_users');
-                res.json({ success: true, user: { name, email: cleanEmail, phone, referralCode: myCode } });
+
+        // VALIDACIÓN DE CÓDIGO DE REFERIDO
+        if (referralCode && referralCode.trim() !== "") {
+            db.get("SELECT id FROM users WHERE UPPER(referral_code) = UPPER(?) LIMIT 1", [referralCode.trim()], (err, padrino) => {
+                if (err) return res.status(500).json({ error: err.message });
+                if (!padrino) {
+                    console.log(`[Registro] ❌ Código de referido inválido: ${referralCode}`);
+                    return res.status(400).json({ error: "El código de referido no es válido. Verifica que esté bien escrito." });
+                }
+                // Si existe, procedemos
+                proceedWithReg(referralCode.trim());
             });
+        } else {
+            proceedWithReg(null);
+        }
+
+        function proceedWithReg(finalRefCode) {
+            db.run("INSERT INTO users (name, email, phone, device_id, last_seen, referral_code, referred_by) VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, ?, ?)",
+                [name, cleanEmail, phone, deviceId, myCode, finalRefCode], function (err) {
+                    if (err) return res.status(500).json({ error: err.message });
+                    io.emit('update_users');
+                    res.json({ success: true, user: { name, email: cleanEmail, phone, referralCode: myCode } });
+                });
+        }
     });
 });
+
 
 app.post('/api/ping', (req, res) => {
     const { deviceId, email, name } = req.body;
