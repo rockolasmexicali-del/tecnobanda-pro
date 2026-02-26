@@ -101,7 +101,10 @@ app.post('/api/auth/request-otp', (req, res) => {
                     html: `<h1>Clave: ${otp}</h1><p>Válida por 5 minutos.</p>`
                 });
                 res.json({ success: true });
-            } catch (e) { res.status(500).json({ error: "Error SMTP (revisa configuración en Admin)" }); }
+            } catch (e) {
+                console.error("❌ ERROR SMTP:", e);
+                res.status(500).json({ error: "Error SMTP (revisa configuración en Admin)" });
+            }
         } else {
             console.log(`[SIMULATED-OTP] Email: ${cleanEmail} -> Code: ${otp}`);
             res.json({ success: true, simulated: true });
