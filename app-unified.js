@@ -109,6 +109,15 @@ db.run("CREATE TABLE IF NOT EXISTS activations (id INTEGER PRIMARY KEY AUTOINCRE
 app.get('/api/health', (req, res) => res.json({ status: "alive", version: SERVER_VERSION, uptime: Math.floor(process.uptime()) }));
 app.get('/api/config', (req, res) => res.json(getConfig()));
 
+// --- DATABASE LOCAL (Para que la app pueda usar el servidor como fuente directa) ---
+app.get('/api/musica', (req, res) => {
+    if (fs.existsSync(MUSICA_JSON_PATH)) {
+        res.json(JSON.parse(fs.readFileSync(MUSICA_JSON_PATH, 'utf8')));
+    } else {
+        res.json([]);
+    }
+});
+
 // --- PROXY SYNC (Para evitar CORS en la base de datos de música) ---
 app.get('/api/proxy-sync', async (req, res) => {
     const targetUrl = req.query.url;
@@ -414,6 +423,15 @@ app.delete('/api/admin/music-library/:filename', (req, res) => {
     } else res.status(404).json({ error: "Archivo no encontrado" });
 });
 
+app.post('/api/admin/music-library/sync', async (req, res) => {
+    try {
+        await updateManifest();
+        res.json({ success: true, message: "Sincronización manual iniciada" });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
 app.post('/api/admin/music-library/rename', (req, res) => {
     const mDir = getMusicDir();
     const { oldName, newName } = req.body;
@@ -551,10 +569,10 @@ function getS3Client() {
     const endpoint = config.s3Endpoint ? `https://${config.s3Endpoint}` : 'https://s3.us-west-004.backblazeb2.com';
     return new S3Client({
         endpoint: endpoint,
-        region: "us-west-004", // Backblaze S3 suele funcionar bien con este region por defecto
+        region: "us-west-004",
         credentials: {
-            accessKeyId: process.env.B2_KEY_ID || '004c11eb0fc379b0000000001',
-            secretAccessKey: process.env.B2_APP_KEY || 'K004VoxaMYYqfp/vO+i/CU19ItjipRk'
+            accessKeyId: config.b2KeyId || process.env.B2_KEY_ID || '004c11eb0fc379b0000000001',
+            secretAccessKey: config.b2AppKey || process.env.B2_APP_KEY || 'K004VoxaMYYqfp/vO+i/CU19ItjipRk'
         }
     });
 }
@@ -584,15 +602,23 @@ async function updateManifest() {
         const b2Domain = config.endpoint || 'f004.backblazeb2.com';
         const bucket = config.bucketName || 'tecnobanda';
 
-        const files = fs.readdirSync(mDir).filter(f => f.toLowerCase().endsWith('.zip') || f.toLowerCase().endsWith('.rar'));
+        // Soportar Karaoke (zip/rar) y Música/Videos (mp3/mp4/mkv/avi)
+        const extensions = ['.zip', '.rar', '.mp3', '.mp4', '.mkv', '.avi'];
+        const files = fs.readdirSync(mDir).filter(f => extensions.some(ext => f.toLowerCase().endsWith(ext)));
+
+        console.log(`[Vigilante] Generando base de datos para ${files.length} archivos...`);
+
         let database = files.map(f => {
             const stats = fs.statSync(path.join(mDir, f));
-            let artist = "Desconocido", title = f.replace(/\.(zip|rar)$/i, '');
+            let artist = "Desconocido", title = f.replace(/\.(zip|rar|mp3|mp4|mkv|avi)$/i, '');
             if (f.includes(' - ')) { const parts = title.split(' - '); artist = parts[0]; title = parts[1]; }
+
+            const isCompressed = f.toLowerCase().endsWith('.zip') || f.toLowerCase().endsWith('.rar');
+
             return {
                 title,
                 artist,
-                isCompressed: true,
+                isCompressed: isCompressed,
                 archiveFile: `https://${b2Domain}/file/${bucket}/${encodeURIComponent(f).replace(/%20/g, '+')}`,
                 dateAdded: stats.mtime.toISOString()
             };
