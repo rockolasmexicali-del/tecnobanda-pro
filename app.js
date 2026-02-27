@@ -371,8 +371,9 @@ async function init() {
         console.warn("No se pudo cargar config.json, usando valores por defecto.");
     }
 
-    // Lógica de Sincronización con Reintentos (3 opciones)
+    // Lógica de Sincronización con Reintentos (Añadimos el endpoint local del servidor unificado como prioridad)
     const urls = [
+        '/api/musica', // <--- Fuente local del servidor unificado (Más rápida y fiable)
         state.config.syncUrl,
         state.config.syncUrlAlt1,
         state.config.syncUrlAlt2
