@@ -941,6 +941,8 @@ async function fetchGlobalConfig() {
         if (document.getElementById('config-bucket-name')) document.getElementById('config-bucket-name').value = config.bucketName || '';
         if (document.getElementById('config-s3-endpoint')) document.getElementById('config-s3-endpoint').value = config.s3Endpoint || '';
         if (document.getElementById('config-endpoint')) document.getElementById('config-endpoint').value = config.endpoint || '';
+        if (document.getElementById('config-b2-key-id')) document.getElementById('config-b2-key-id').value = config.b2KeyId || '';
+        if (document.getElementById('config-b2-app-key')) document.getElementById('config-b2-app-key').value = config.b2AppKey || '';
 
         // Alts
         if (document.getElementById('config-sync-url-alt1')) document.getElementById('config-sync-url-alt1').value = config.syncUrlAlt1 || '';
@@ -989,6 +991,8 @@ async function saveGlobalConfig() {
         bucketName: document.getElementById('config-bucket-name').value.trim(),
         s3Endpoint: document.getElementById('config-s3-endpoint').value.trim(),
         endpoint: document.getElementById('config-endpoint').value.trim(),
+        b2KeyId: document.getElementById('config-b2-key-id').value.trim(),
+        b2AppKey: document.getElementById('config-b2-app-key').value.trim(),
         syncUrlAlt1: document.getElementById('config-sync-url-alt1').value.trim(),
         bucketNameAlt1: document.getElementById('config-bucket-name-alt1').value.trim(),
         s3EndpointAlt1: document.getElementById('config-s3-endpoint-alt1').value.trim(),
@@ -1438,6 +1442,22 @@ async function fetchMusicLibrary() {
         musicFiles = await res.json();
         renderMusicTable(musicFiles);
     } catch (e) { console.error(e); }
+}
+
+async function forceSyncCloud() {
+    showToast("📤 Iniciando sincronización con la nube...");
+    try {
+        const res = await fetch(`${API_URL}/admin/music-library/sync`, { method: 'POST' });
+        const data = await res.json();
+        if (data.success) {
+            showToast("✅ Sincronización completada con éxito", "success");
+            fetchMusicLibrary();
+        } else {
+            showToast("❌ Error: " + data.error, "error");
+        }
+    } catch (e) {
+        showToast("❌ Error de red al sincronizar", "error");
+    }
 }
 
 function renderMusicTable(files) {

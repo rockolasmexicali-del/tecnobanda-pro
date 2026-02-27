@@ -415,6 +415,10 @@ textarea {
     display: none;
 }
 
+#edit-modal {
+    z-index: 1100; /* Ensure edit modal is on top of details modal */
+}
+
 .modal-content {
     width: 90%;
     max-width: 500px;
