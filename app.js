@@ -371,23 +371,24 @@ async function init() {
         console.warn("No se pudo cargar config.json, usando valores por defecto.");
     }
 
-    // Lógica de Sincronización con Reintentos (Añadimos el endpoint local del servidor unificado como prioridad)
+    // Lógica de Sincronización (Regresamos a Backblaze por defecto como hace 4 horas)
     const urls = [
-        '/api/musica', // <--- Fuente local del servidor unificado (Más rápida y fiable)
         state.config.syncUrl,
         state.config.syncUrlAlt1,
-        state.config.syncUrlAlt2
+        state.config.syncUrlAlt2,
+        '/api/musica' // Reserva local
     ].filter(u => u && u.trim() !== "");
 
     let loaded = false;
     for (const url of urls) {
         console.log(`Intentando sincronizar con: ${url}`);
         const success = await loadFromUrl(url);
-        if (success) {
+        // Solo consideramos "éxito" si encontramos canciones; si hay 0, seguimos buscando
+        if (success && state.localDb.length > 0) {
             loaded = true;
             break;
         }
-        console.warn(`Fallo sincronización con ${url}, intentando alterna...`);
+        console.warn(`Fallo o sin datos en ${url}, intentando alterna...`);
     }
 
     if (!loaded && urls.length > 0) {

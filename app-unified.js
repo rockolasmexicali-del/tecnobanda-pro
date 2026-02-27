@@ -118,20 +118,17 @@ app.get('/api/musica', (req, res) => {
     }
 });
 
-// --- PROXY SYNC (Para evitar CORS en la base de datos de música) ---
+// --- PROXY SYNC (Versión Estable de hace 4 horas) ---
 app.get('/api/proxy-sync', async (req, res) => {
     const targetUrl = req.query.url;
     if (!targetUrl) return res.status(400).json({ error: "URL requerida" });
     try {
-        const response = await fetch(targetUrl, {
-            headers: { 'User-Agent': 'TecnoBanda-Server/5.0' }
-        });
-        if (!response.ok) throw new Error(`Fallo al obtener DB (Status: ${response.status})`);
+        const response = await fetch(targetUrl);
         const data = await response.json();
         res.json(data);
     } catch (e) {
-        console.error("❌ ERROR PROXY-SYNC:", e.message);
-        res.status(500).json({ error: "No se pudo sincronizar la base de datos", details: e.message });
+        console.error("❌ ERROR PROXY-SYNC:", e);
+        res.status(500).json({ error: "No se pudo sincronizar" });
     }
 });
 
