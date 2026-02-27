@@ -1783,8 +1783,8 @@ function renderRecentSongs() {
     }
 
     // El servidor ya nos entrega la DB ordenada por fecha (lo más nuevo primero)
-    // Así que simplemente mostramos las primeras 15 canciones como "Novedades"
-    const toRender = state.localDb.slice(0, 15);
+    // Así que simplemente mostramos las primeras 9 canciones como "Novedades"
+    const toRender = state.localDb.slice(0, 9);
 
     ui.recentList.innerHTML = toRender.map(track => {
         const originalIdx = state.localDb.indexOf(track);
