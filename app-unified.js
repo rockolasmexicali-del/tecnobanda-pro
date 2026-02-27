@@ -273,9 +273,97 @@ app.delete('/api/admin/licenses/:key', (req, res) => {
     });
 });
 
+// --- ADMIN API: CONFIG ---
+app.get('/api/admin/config', (req, res) => {
+    res.json(getConfig());
+});
+
+app.post('/api/admin/config', (req, res) => {
+    const config = getConfig();
+    // Deep merge limited to one level for key objects
+    const newConfig = { ...config, ...req.body };
+
+    if (req.body.emailServer) {
+        newConfig.emailServer = { ...(config.emailServer || {}), ...req.body.emailServer };
+    }
+    if (req.body.prices) {
+        newConfig.prices = { ...(config.prices || {}), ...req.body.prices };
+    }
+
+    if (saveConfig(newConfig)) {
+        console.log("[Config] Ajustes guardados correctamente.");
+        res.json({ success: true });
+    } else {
+        res.status(500).json({ error: "No se pudo guardar la configuración" });
+    }
+});
+
 // --- ADMIN API: USERS ---
 app.get('/api/admin/users', (req, res) => {
     db.all("SELECT * FROM users ORDER BY last_seen DESC", (err, rows) => res.json(rows || []));
+});
+
+app.post('/api/admin/users/edit', (req, res) => {
+    const { id, name, email, phone } = req.body;
+    db.run("UPDATE users SET name = ?, email = ?, phone = ? WHERE id = ?", [name, email.toLowerCase().trim(), phone, id], (err) => {
+        if (err) return res.status(500).json({ error: err.message });
+        io.emit('update_users');
+        res.json({ success: true });
+    });
+});
+
+app.delete('/api/admin/users/:id', (req, res) => {
+    db.run("DELETE FROM users WHERE id = ?", [req.params.id], (err) => {
+        if (err) return res.status(500).json({ error: err.message });
+        io.emit('update_users');
+        res.json({ success: true });
+    });
+});
+
+// --- ADMIN API: STATS & HISTORY ---
+app.get('/api/admin/stats', (req, res) => {
+    const stats = {};
+    // This is a simplified version of stats
+    db.get("SELECT COUNT(*) as count FROM users", (err, row) => {
+        stats.totalUsers = row ? row.count : 0;
+        db.get("SELECT COUNT(*) as count FROM licenses WHERE status='USED'", (err, row) => {
+            stats.weeklyActivations = row ? row.count : 0; // Simplified to total for now
+            db.get("SELECT SUM(price_paid) as sum FROM activations", (err, row) => {
+                stats.weeklyIncome = row ? row.sum || 0 : 0;
+                db.all("SELECT * FROM users ORDER BY registered_at DESC LIMIT 10", (err, users) => {
+                    stats.users = users || [];
+                    stats.weeklyUsers = users.length; // Simplified
+                    res.json(stats);
+                });
+            });
+        });
+    });
+});
+
+app.get('/api/admin/history', (req, res) => {
+    db.all(`SELECT a.*, l.type as license_type, u.name as user_name, u.email as user_email 
+            FROM activations a 
+            JOIN licenses l ON a.license_key = l.key 
+            LEFT JOIN users u ON l.user_email = u.email 
+            ORDER BY a.activated_at DESC`, (err, rows) => {
+        res.json(rows || []);
+    });
+});
+
+// --- ADMIN API: KEY MANAGEMENT ---
+app.post('/api/admin/licenses/revoke', (req, res) => {
+    const { deviceId } = req.body;
+    db.run("UPDATE licenses SET status = 'REVOKED' WHERE original_device_id = ?", [deviceId], (err) => {
+        io.emit('update_licenses');
+        res.json({ success: true });
+    });
+});
+
+app.delete('/api/admin/licenses-all/unused', (req, res) => {
+    db.run("DELETE FROM licenses WHERE status = 'UNUSED'", (err) => {
+        io.emit('update_licenses');
+        res.json({ success: true });
+    });
 });
 
 // --- ADMIN API: MUSIC & AUDIOS ---
