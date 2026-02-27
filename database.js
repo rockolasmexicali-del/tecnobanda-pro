@@ -1,13 +1,26 @@
 const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
 
-const dbPath = path.resolve(__dirname, 'licenses.db');
+// Determinar ruta de base de datos (Prioriza carpeta persistente /data)
+const DATA_DIR = path.join(__dirname, 'data');
+if (!fs.existsSync(DATA_DIR)) {
+    try { fs.mkdirSync(DATA_DIR, { recursive: true }); } catch (e) { }
+}
+
+let dbPath = path.join(DATA_DIR, 'licenses.db');
+
+// Migración automática: Si existe en la raíz pero no en /data, moverlo
+const oldPath = path.join(__dirname, 'licenses.db');
+if (fs.existsSync(oldPath) && !fs.existsSync(dbPath)) {
+    console.log("🚚 Migrando base de datos a carpeta persistente...");
+    try { fs.renameSync(oldPath, dbPath); } catch (e) { dbPath = oldPath; }
+}
 
 const db = new sqlite3.Database(dbPath, (err) => {
     if (err) {
         console.error('Error connecting to database:', err.message);
     } else {
-        console.log('Connected to the SQLite database.');
+        console.log(`✅ Base de Datos activa en: ${dbPath}`);
         initDb();
     }
 });
