@@ -109,6 +109,21 @@ db.run("CREATE TABLE IF NOT EXISTS activations (id INTEGER PRIMARY KEY AUTOINCRE
 app.get('/api/health', (req, res) => res.json({ status: "alive", version: SERVER_VERSION, uptime: Math.floor(process.uptime()) }));
 app.get('/api/config', (req, res) => res.json(getConfig()));
 
+// --- PROXY SYNC (Para evitar CORS en la base de datos de música) ---
+app.get('/api/proxy-sync', async (req, res) => {
+    const targetUrl = req.query.url;
+    if (!targetUrl) return res.status(400).json({ error: "URL requerida" });
+    try {
+        const response = await fetch(targetUrl);
+        if (!response.ok) throw new Error("Fallo al obtener la DB remota");
+        const data = await response.json();
+        res.json(data);
+    } catch (e) {
+        console.error("❌ ERROR PROXY-SYNC:", e.message);
+        res.status(500).json({ error: "No se pudo sincronizar la base de datos remota" });
+    }
+});
+
 // --- AUTH: REQUEST OTP ---
 app.post('/api/auth/request-otp', (req, res) => {
     const { email } = req.body;
@@ -367,15 +382,76 @@ app.delete('/api/admin/licenses-all/unused', (req, res) => {
 });
 
 // --- ADMIN API: MUSIC & AUDIOS ---
+app.get('/api/admin/music-library', (req, res) => {
+    const mDir = getMusicDir();
+    if (!fs.existsSync(mDir)) return res.json([]);
+    const files = fs.readdirSync(mDir).filter(f => f.toLowerCase().endsWith('.zip') || f.toLowerCase().endsWith('.rar') || f.toLowerCase().endsWith('.mp3'));
+    res.json(files.map(f => {
+        const stats = fs.statSync(path.join(mDir, f));
+        return {
+            name: f,
+            size: (stats.size / (1024 * 1024)).toFixed(2) + ' MB',
+            size_bytes: stats.size,
+            date: stats.mtime
+        };
+    }));
+});
+
+// -- Music Library Management --
+app.post('/api/admin/music-library/upload', musicUpload.single('file'), (req, res) => {
+    if (!req.file) return res.status(400).json({ error: "No se subió ningún archivo" });
+    logActivity('Librería', `Subida: ${req.file.originalname}`);
+    res.json({ success: true });
+});
+
+app.delete('/api/admin/music-library/:filename', (req, res) => {
+    const mDir = getMusicDir();
+    const file = path.join(mDir, req.params.filename);
+    if (fs.existsSync(file)) {
+        fs.unlinkSync(file);
+        logActivity('Librería', `Eliminado: ${req.params.filename}`);
+        res.json({ success: true });
+    } else res.status(404).json({ error: "Archivo no encontrado" });
+});
+
+app.post('/api/admin/music-library/rename', (req, res) => {
+    const mDir = getMusicDir();
+    const { oldName, newName } = req.body;
+    const oldP = path.join(mDir, oldName);
+    const newP = path.join(mDir, newName);
+    if (fs.existsSync(oldP)) {
+        fs.renameSync(oldP, newP);
+        logActivity('Librería', `Renombrado: ${oldName} -> ${newName}`);
+        res.json({ success: true });
+    } else res.status(404).json({ error: "Archivo no encontrado" });
+});
+
+// -- Audio Management (Intros/Ambient) --
 app.get('/api/admin/audios/:type', (req, res) => {
     const dir = path.join(UPLOADS_DIR, req.params.type);
     if (!fs.existsSync(dir)) return res.json([]);
     res.json(fs.readdirSync(dir).filter(f => f.endsWith('.mp3') || f.endsWith('.wav')).map(f => ({ name: f, url: `/uploads/${req.params.type}/${f}` })));
 });
 
-app.get('/api/admin/music-library', (req, res) => {
-    if (fs.existsSync(MUSICA_JSON_PATH)) res.json(JSON.parse(fs.readFileSync(MUSICA_JSON_PATH, 'utf8')));
-    else res.json([]);
+app.post('/api/admin/audios/:type', uploadAudio.single('audio'), (req, res) => {
+    if (!req.file) return res.status(400).json({ error: "No se subió ningún archivo" });
+    res.json({ success: true, name: req.file.filename, url: `/uploads/${req.params.type}/${req.file.filename}` });
+});
+
+app.delete('/api/admin/audios/:type/:filename', (req, res) => {
+    const { type, filename } = req.params;
+    const filePath = path.join(UPLOADS_DIR, type, filename);
+    if (fs.existsSync(filePath)) {
+        fs.unlinkSync(filePath);
+        res.json({ success: true });
+    } else res.status(404).json({ error: "Archivo no encontrado" });
+});
+
+// -- Audit Logs --
+app.get('/api/admin/audit-logs', (req, res) => {
+    db.all("SELECT * FROM audit_logs ORDER BY created_at DESC LIMIT 200", (err, rows) => {
+        res.json(rows || []);
+    });
 });
 
 // --- PLAYLISTS ---
@@ -395,6 +471,9 @@ app.patch('/api/playlists/:id', (req, res) => {
     const { name, songs } = req.body;
     db.run("UPDATE playlists SET name = COALESCE(?, name), songs = COALESCE(?, songs), updated_at = CURRENT_TIMESTAMP WHERE id = ?",
         [name, songs ? JSON.stringify(songs) : null, req.params.id], () => res.json({ success: true }));
+});
+app.delete('/api/playlists/:id', (req, res) => {
+    db.run("DELETE FROM playlists WHERE id = ?", [req.params.id], () => res.json({ success: true }));
 });
 
 // --- GIFTS & REFERRALS API ---
@@ -466,35 +545,57 @@ app.post('/api/users/gifts/claim', (req, res) => {
 // INTEGRACIÓN VIGILANTE (B2 Sync)
 // ==========================================
 let watcher = null;
-const B2_KEY_ID = '004c11eb0fc379b0000000001';
-const B2_APP_KEY = 'K004VoxaMYYqfp/vO+i/CU19ItjipRk';
-const B2_ENDPOINT = 'https://s3.us-west-004.backblazeb2.com';
-const BUCKET_NAME = 'tecnobanda';
-const B2_DOMAIN = 'f004.backblazeb2.com';
 
-const s3 = new S3Client({
-    endpoint: B2_ENDPOINT,
-    region: "us-west-004",
-    credentials: { accessKeyId: B2_KEY_ID, secretAccessKey: B2_APP_KEY }
-});
+function getS3Client() {
+    const config = getConfig();
+    const endpoint = config.s3Endpoint ? `https://${config.s3Endpoint}` : 'https://s3.us-west-004.backblazeb2.com';
+    return new S3Client({
+        endpoint: endpoint,
+        region: "us-west-004", // Backblaze S3 suele funcionar bien con este region por defecto
+        credentials: {
+            accessKeyId: process.env.B2_KEY_ID || '004c11eb0fc379b0000000001',
+            secretAccessKey: process.env.B2_APP_KEY || 'K004VoxaMYYqfp/vO+i/CU19ItjipRk'
+        }
+    });
+}
 
 async function uploadToB2(filePath, fileName) {
     try {
+        const config = getConfig();
+        const bucket = config.bucketName || 'tecnobanda';
         const fileContent = fs.readFileSync(filePath);
-        await s3.send(new PutObjectCommand({ Bucket: BUCKET_NAME, Key: fileName, Body: fileContent, ACL: 'public-read' }));
+        const s3Client = getS3Client();
+        await s3Client.send(new PutObjectCommand({
+            Bucket: bucket,
+            Key: fileName,
+            Body: fileContent,
+            ACL: 'public-read'
+        }));
+        console.log(`[Vigilante] Sincronizado: ${fileName} -> ${bucket}`);
     } catch (err) { console.error(`[Vigilante] Error subiendo ${fileName}:`, err); }
 }
 
 async function updateManifest() {
     try {
+        const config = getConfig();
         const mDir = getMusicDir();
         if (!fs.existsSync(mDir)) return;
+
+        const b2Domain = config.endpoint || 'f004.backblazeb2.com';
+        const bucket = config.bucketName || 'tecnobanda';
+
         const files = fs.readdirSync(mDir).filter(f => f.toLowerCase().endsWith('.zip') || f.toLowerCase().endsWith('.rar'));
         let database = files.map(f => {
             const stats = fs.statSync(path.join(mDir, f));
             let artist = "Desconocido", title = f.replace(/\.(zip|rar)$/i, '');
             if (f.includes(' - ')) { const parts = title.split(' - '); artist = parts[0]; title = parts[1]; }
-            return { title, artist, isCompressed: true, archiveFile: `https://${B2_DOMAIN}/file/${BUCKET_NAME}/${encodeURIComponent(f).replace(/%20/g, '+')}`, dateAdded: stats.mtime.toISOString() };
+            return {
+                title,
+                artist,
+                isCompressed: true,
+                archiveFile: `https://${b2Domain}/file/${bucket}/${encodeURIComponent(f).replace(/%20/g, '+')}`,
+                dateAdded: stats.mtime.toISOString()
+            };
         });
         database.sort((a, b) => new Date(b.dateAdded) - new Date(a.dateAdded));
         fs.writeFileSync(MUSICA_JSON_PATH, JSON.stringify(database, null, 2));
