@@ -854,10 +854,14 @@ function renderActiveLicensesTable(licenses) {
     licenses.forEach(lic => {
         const tr = document.createElement('tr');
         const expiry = lic.expires_at ? new Date(lic.expires_at).toLocaleDateString() : 'Nunca';
+        let displayType = lic.type;
+        if (lic.type === 'GIFT') displayType = '🎁 REGALO';
+        else if (lic.type === '1_DAY') displayType = '⚡ LIBRE (1 DIA)';
+
         tr.innerHTML = `
             <td>${lic.user_name || lic.user_email || '<i>Libre</i>'}</td>
             <td><code>${lic.key}</code></td>
-            <td>${lic.type}</td>
+            <td>${displayType}</td>
             <td>${expiry}</td>
             <td><span class="status-badge ${lic.status === 'USED' ? 'status-online' : 'status-offline'}">${lic.status}</span></td>
             <td>
