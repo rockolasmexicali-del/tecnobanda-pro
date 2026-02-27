@@ -928,27 +928,55 @@ async function deleteAllUnused() {
 
 // Global Config
 async function fetchGlobalConfig() {
-    const res = await fetch(`${API_URL}/admin/config`);
-    const config = await res.json();
-    document.getElementById('config-wa-num').value = config.whatsappNumber || '';
-    document.getElementById('config-wa-msg').value = config.whatsappMessage || '';
-    document.getElementById('config-code-num').value = config.requestCodeNumber || '';
-    document.getElementById('config-code-msg').value = config.requestCodeMessage || '';
-    document.getElementById('config-sync-url').value = config.syncUrl || '';
-    document.getElementById('config-bucket-name').value = config.bucketName || '';
-    document.getElementById('config-s3-endpoint').value = config.s3Endpoint || '';
-    document.getElementById('config-endpoint').value = config.endpoint || '';
-    // Alts
-    document.getElementById('config-sync-url-alt1').value = config.syncUrlAlt1 || '';
-    document.getElementById('config-bucket-name-alt1').value = config.bucketNameAlt1 || '';
-    document.getElementById('config-s3-endpoint-alt1').value = config.s3EndpointAlt1 || '';
-    document.getElementById('config-endpoint-alt1').value = config.endpointAlt1 || '';
-    document.getElementById('config-sync-url-alt2').value = config.syncUrlAlt2 || '';
-    document.getElementById('config-bucket-name-alt2').value = config.bucketNameAlt2 || '';
-    document.getElementById('config-s3-endpoint-alt2').value = config.s3EndpointAlt2 || '';
-    document.getElementById('config-endpoint-alt2').value = config.endpointAlt2 || '';
-    document.getElementById('config-music-path').value = config.musicPath || '';
-    document.getElementById('config-vigilante-enabled').checked = config.vigilanteEnabled !== false;
+    try {
+        const res = await fetch(`${API_URL}/admin/config`);
+        const config = await res.json();
+
+        // App settings
+        if (document.getElementById('config-wa-num')) document.getElementById('config-wa-num').value = config.whatsappNumber || '';
+        if (document.getElementById('config-wa-msg')) document.getElementById('config-wa-msg').value = config.whatsappMessage || '';
+        if (document.getElementById('config-code-num')) document.getElementById('config-code-num').value = config.requestCodeNumber || '';
+        if (document.getElementById('config-code-msg')) document.getElementById('config-code-msg').value = config.requestCodeMessage || '';
+        if (document.getElementById('config-sync-url')) document.getElementById('config-sync-url').value = config.syncUrl || '';
+        if (document.getElementById('config-bucket-name')) document.getElementById('config-bucket-name').value = config.bucketName || '';
+        if (document.getElementById('config-s3-endpoint')) document.getElementById('config-s3-endpoint').value = config.s3Endpoint || '';
+        if (document.getElementById('config-endpoint')) document.getElementById('config-endpoint').value = config.endpoint || '';
+
+        // Alts
+        if (document.getElementById('config-sync-url-alt1')) document.getElementById('config-sync-url-alt1').value = config.syncUrlAlt1 || '';
+        if (document.getElementById('config-bucket-name-alt1')) document.getElementById('config-bucket-name-alt1').value = config.bucketNameAlt1 || '';
+        if (document.getElementById('config-s3-endpoint-alt1')) document.getElementById('config-s3-endpoint-alt1').value = config.s3EndpointAlt1 || '';
+        if (document.getElementById('config-endpoint-alt1')) document.getElementById('config-endpoint-alt1').value = config.endpointAlt1 || '';
+        if (document.getElementById('config-sync-url-alt2')) document.getElementById('config-sync-url-alt2').value = config.syncUrlAlt2 || '';
+        if (document.getElementById('config-bucket-name-alt2')) document.getElementById('config-bucket-name-alt2').value = config.bucketNameAlt2 || '';
+        if (document.getElementById('config-s3-endpoint-alt2')) document.getElementById('config-s3-endpoint-alt2').value = config.s3EndpointAlt2 || '';
+        if (document.getElementById('config-endpoint-alt2')) document.getElementById('config-endpoint-alt2').value = config.endpointAlt2 || '';
+
+        if (document.getElementById('config-music-path')) document.getElementById('config-music-path').value = config.musicPath || '';
+        if (document.getElementById('config-vigilante-enabled')) document.getElementById('config-vigilante-enabled').checked = config.vigilanteEnabled !== false;
+
+        // Prices
+        if (config.prices) {
+            if (document.getElementById('price-day')) document.getElementById('price-day').value = config.prices['1_DAY'] || 10;
+            if (document.getElementById('price-month')) document.getElementById('price-month').value = config.prices['30_DAYS'] || 250;
+            if (document.getElementById('price-perm')) document.getElementById('price-perm').value = config.prices['PERMANENT'] || 1500;
+        }
+
+        // Email SMTP
+        if (config.emailServer) {
+            if (document.getElementById('email-service')) document.getElementById('email-service').value = config.emailServer.service || '';
+            if (document.getElementById('email-user')) document.getElementById('email-user').value = config.emailServer.user || '';
+            if (document.getElementById('email-pass')) document.getElementById('email-pass').value = config.emailServer.pass || '';
+            if (document.getElementById('email-from-name')) document.getElementById('email-from-name').value = config.emailServer.fromName || '';
+        }
+
+        // Referral Meta
+        const metaIn = document.getElementById('config-referral-meta');
+        if (metaIn) metaIn.value = config.referralMeta || 5;
+
+    } catch (err) {
+        console.error("Error fetching global config:", err);
+    }
 }
 
 async function saveGlobalConfig() {
@@ -982,8 +1010,16 @@ async function saveGlobalConfig() {
 
 // Modal handling
 function openEditModal(userId) {
-    const user = allUsers.find(u => u.id === userId);
-    if (!user) return;
+    // Buscar en ambos arreglos para asegurar que lo encontramos
+    let user = allUsers.find(u => u.id === userId);
+    if (!user) {
+        user = moduleUsers.find(u => u.id === userId);
+    }
+
+    if (!user) {
+        console.error("Usuario no encontrado en las listas locales:", userId);
+        return;
+    }
     document.getElementById('edit-user-id').value = user.id;
     document.getElementById('edit-name').value = user.name || '';
     document.getElementById('edit-email').value = user.email || '';
@@ -998,17 +1034,35 @@ function closeModal() {
 async function saveUser() {
     const id = document.getElementById('edit-user-id').value;
     const body = {
+        id: id,
         name: document.getElementById('edit-name').value,
         email: document.getElementById('edit-email').value,
         phone: document.getElementById('edit-phone').value
     };
-    await fetch(`${API_URL}/admin/users/${id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body)
-    });
-    closeModal();
-    fetchStats();
+
+    try {
+        const res = await fetch(`${API_URL}/admin/users/edit`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body)
+        });
+
+        if (res.ok) {
+            closeModal();
+            fetchStats();
+            if (currentDetailsEmail) {
+                currentDetailsEmail = body.email.toLowerCase().trim();
+                setTimeout(refreshDetailsModal, 300);
+            }
+            showToast("Usuario actualizado correctamente", "success");
+        } else {
+            const data = await res.json();
+            alert("Error: " + data.error);
+        }
+    } catch (err) {
+        console.error("Error saving user:", err);
+        alert("Error de conexión al guardar usuario");
+    }
 }
 async function fetchEmailConfig() {
     try {
