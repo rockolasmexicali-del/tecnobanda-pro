@@ -653,9 +653,9 @@ io.on('connection', (socket) => {
     // --- RECEPTOR DE MENSAJES DEL ADMIN ---
     socket.on('admin_message', (data) => {
         const { target, message } = data;
-        console.log(`[Messenger] Admin -> ${target}: ${message}`);
+        console.log(`[Messenger] Admin -> ${target || 'ALL'}: ${message}`);
 
-        if (target === 'ALL') {
+        if (!target || target === 'ALL') {
             // Enviar a todos los conectados
             io.emit('admin_message', { message, timestamp: new Date().toISOString() });
         } else {
@@ -663,6 +663,22 @@ io.on('connection', (socket) => {
             const userRoom = target.toLowerCase().trim();
             io.to(userRoom).emit('admin_message', { message, timestamp: new Date().toISOString() });
         }
+    });
+
+    // --- BROADCATER DE BASE DE DATOS (Vigilante -> Apps) ---
+    socket.on('database_updated', (db) => {
+        io.emit('database_updated', db);
+        console.log(`[Socket] Database updated broadcasted (${db.length} songs)`);
+    });
+
+    socket.on('song_added', (song) => {
+        io.emit('song_added', song);
+        console.log(`[Socket] New song added: ${song.title}`);
+    });
+
+    socket.on('song_deleted', (song) => {
+        io.emit('song_deleted', song);
+        console.log(`[Socket] Song deleted: ${song.title}`);
     });
 });
 

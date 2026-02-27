@@ -514,6 +514,9 @@ function initSocket() {
         }
 
         renderRecentSongs();
+        if (ui.libraryCount) {
+            ui.libraryCount.innerHTML = `<i class="fa-solid fa-list-music"></i> <b>${state.localDb.length}</b> canciones disponibles`;
+        }
     });
 
     state.socket.on('song_deleted', (song) => {
@@ -522,6 +525,9 @@ function initSocket() {
         // Quitar de la lista local
         state.localDb = state.localDb.filter(t => t.title !== song.title);
         renderRecentSongs();
+        if (ui.libraryCount) {
+            ui.libraryCount.innerHTML = `<i class="fa-solid fa-list-music"></i> <b>${state.localDb.length}</b> canciones disponibles`;
+        }
     });
 
     state.socket.on('database_updated', (newDb) => {
