@@ -23,12 +23,25 @@ const app = express();
 const server = http.createServer(app);
 const io = socketIo(server, { cors: { origin: "*" } });
 
-const UPLOADS_DIR = path.join(__dirname, 'uploads');
-const MUSICA_JSON_PATH = path.join(__dirname, 'musica.json');
+const DATA_DIR = path.join(__dirname, 'data');
+const UPLOADS_DIR = path.join(DATA_DIR, 'uploads');
+const CONFIG_PATH = path.join(DATA_DIR, 'config.json');
+const MUSICA_JSON_PATH = path.join(DATA_DIR, 'musica.json');
 
-[UPLOADS_DIR, path.join(UPLOADS_DIR, 'intros'), path.join(UPLOADS_DIR, 'ambient')].forEach(dir => {
+// Asegurar directorios
+[DATA_DIR, UPLOADS_DIR, path.join(UPLOADS_DIR, 'intros'), path.join(UPLOADS_DIR, 'ambient')].forEach(dir => {
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 });
+
+// Migración de config si está en raíz
+const OLD_CONFIG = path.join(__dirname, 'config.json');
+if (fs.existsSync(OLD_CONFIG) && !fs.existsSync(CONFIG_PATH)) {
+    try { fs.renameSync(OLD_CONFIG, CONFIG_PATH); console.log("🚚 Config migrada a /data"); } catch (e) { }
+}
+const OLD_MUSICA = path.join(__dirname, 'musica.json');
+if (fs.existsSync(OLD_MUSICA) && !fs.existsSync(MUSICA_JSON_PATH)) {
+    try { fs.renameSync(OLD_MUSICA, MUSICA_JSON_PATH); console.log("🚚 musica.json migrada a /data"); } catch (e) { }
+}
 
 // Configuración de Multer
 const audioStorage = multer.diskStorage({
@@ -63,13 +76,12 @@ app.use('/uploads', express.static(UPLOADS_DIR));
 
 function getConfig() {
     try {
-        const p = path.join(__dirname, 'config.json');
-        return fs.existsSync(p) ? JSON.parse(fs.readFileSync(p, 'utf8')) : {};
+        return fs.existsSync(CONFIG_PATH) ? JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8')) : {};
     } catch (e) { return {}; }
 }
 
 function saveConfig(config) {
-    try { fs.writeFileSync(path.join(__dirname, 'config.json'), JSON.stringify(config, null, 4)); return true; }
+    try { fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 4)); return true; }
     catch (e) { return false; }
 }
 
@@ -251,7 +263,7 @@ app.post('/api/activate', (req, res) => {
         if (!lic) return res.status(400).json({ error: "Llave inválida" });
         const now = new Date();
         let exp = null;
-        if (lic.type === '1_DAY') exp = new Date(now.getTime() + 86400000).toISOString();
+        if (lic.type === '1_DAY' || lic.type === 'GIFT') exp = new Date(now.getTime() + 86400000).toISOString();
         else if (lic.type === '30_DAYS') exp = new Date(now.getTime() + 2592000000).toISOString();
         else exp = new Date(2100, 0, 1).toISOString();
         db.run("UPDATE licenses SET status='USED', user_email=?, expires_at=?, original_device_id=? WHERE key=?",
@@ -383,9 +395,9 @@ app.post('/api/admin/licenses/revoke', (req, res) => {
 });
 
 app.delete('/api/admin/licenses-all/unused', (req, res) => {
-    db.run("DELETE FROM licenses WHERE status = 'UNUSED'", (err) => {
+    db.run("DELETE FROM licenses WHERE status = 'UNUSED' AND type != 'GIFT'", (err) => {
         io.emit('update_licenses');
-        res.json({ success: true });
+        res.json({ success: true, message: "Licencias libres (no regalos) eliminadas" });
     });
 });
 
@@ -516,7 +528,7 @@ app.post('/api/users/gifts/claim', (req, res) => {
             if (err) return res.status(500).json({ error: "Error al actualizar regalos pendientes" });
 
             const key = `GIFT-1D-${Math.random().toString(36).substr(2, 6).toUpperCase()}`;
-            db.run("INSERT INTO licenses (key, type, status) VALUES (?, '1_DAY', 'UNUSED')", [key], async function (err) {
+            db.run("INSERT INTO licenses (key, type, status) VALUES (?, 'GIFT', 'UNUSED')", [key], async function (err) {
                 if (err) {
                     db.run("UPDATE users SET pending_gifts = pending_gifts + 1 WHERE LOWER(email) = ?", [cleanEmail]);
                     return res.status(500).json({ error: "Error al generar la licencia de regalo" });
@@ -719,7 +731,7 @@ async function handleReferralPoint(userEmail) {
 
 async function generateGiftLicense(email) {
     const key = `GIFT-1D-${Math.random().toString(36).substr(2, 6).toUpperCase()}`;
-    db.run("INSERT INTO licenses (key, type, status) VALUES (?, '1_DAY', 'UNUSED')", [key], () => {
+    db.run("INSERT INTO licenses (key, type, status) VALUES (?, 'GIFT', 'UNUSED')", [key], () => {
         console.log(`[Referidos] Regalo generado para ${email}: ${key}`);
         io.to(email).emit('new_gift', { message: "¡Has ganado una licencia de regalo!" });
     });
