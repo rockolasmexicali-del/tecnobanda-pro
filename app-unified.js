@@ -11,7 +11,7 @@ const multer = require('multer');
 const { S3Client, PutObjectCommand, DeleteObjectCommand } = require("@aws-sdk/client-s3");
 const chokidar = require('chokidar');
 
-const SERVER_VERSION = "5.1.0 (Recovery Update)";
+const SERVER_VERSION = "5.2.0 (Admin & SMTP Fix)";
 const PORT = process.env.PORT || 3000;
 const otpStore = new Map();
 
@@ -619,7 +619,26 @@ app.get('*', (req, res, next) => {
 
 io.on('connection', (socket) => {
     socket.on('join_admin', () => socket.join('admin_room'));
-    socket.on('join_user', (email) => socket.join(email.toLowerCase().trim()));
+    socket.on('join_user', (email) => {
+        const userRoom = email.toLowerCase().trim();
+        socket.join(userRoom);
+        console.log(`[Socket] User joined room: ${userRoom}`);
+    });
+
+    // --- RECEPTOR DE MENSAJES DEL ADMIN ---
+    socket.on('admin_message', (data) => {
+        const { target, message } = data;
+        console.log(`[Messenger] Admin -> ${target}: ${message}`);
+
+        if (target === 'ALL') {
+            // Enviar a todos los conectados
+            io.emit('admin_message', { message, timestamp: new Date().toISOString() });
+        } else {
+            // Enviar a un usuario específico (por su sala de email)
+            const userRoom = target.toLowerCase().trim();
+            io.to(userRoom).emit('admin_message', { message, timestamp: new Date().toISOString() });
+        }
+    });
 });
 
 // --- REFERRALS LOGIC ---
