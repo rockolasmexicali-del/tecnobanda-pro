@@ -76,13 +76,17 @@ function saveConfig(config) {
 function getMailTransporter() {
     const config = getConfig();
     const mail = config.emailServer || {};
-    const user = process.env.SMTP_USER || mail.user;
-    const pass = process.env.SMTP_PASS || mail.pass;
-    const service = process.env.SMTP_SERVICE || mail.service || 'gmail';
+
+    // Prioritize environment variables ONLY if they are not empty
+    const user = (process.env.SMTP_USER && process.env.SMTP_USER.trim() !== "") ? process.env.SMTP_USER : mail.user;
+    const pass = (process.env.SMTP_PASS && process.env.SMTP_PASS.trim() !== "") ? process.env.SMTP_PASS : mail.pass;
+    const service = (process.env.SMTP_SERVICE && process.env.SMTP_SERVICE.trim() !== "") ? process.env.SMTP_SERVICE : (mail.service || 'gmail');
 
     if (user && pass) {
         return nodemailer.createTransport({
-            service: service,
+            host: "smtp.gmail.com",
+            port: 465,
+            secure: true,
             auth: { user: user, pass: pass },
             tls: { rejectUnauthorized: false }
         });
